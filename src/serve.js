@@ -4,35 +4,49 @@ var staticHtml = {
  "/": "./static/index.html"
 }
 
+function respondPlain(response, status, body){
+ response.setHeader("Content-Type", "text/plain");
+ response.statusCode = status;
+ return response.end(body);
+}
+
+function respondNotFound(s){
+ return respondPlain(s, 404, "Not Found");
+}
+function respondInternalFailure(s){
+ return respondPlain(s, 500, "oops!");
+}
+
+function respondStatic(url, response){
+ if(!(url in staticHtml)) return respondNotFound(response);
+ var fs = require("fs");
+ var path = staticHtml[url];
+ function fileback(err, data){
+  if(err){
+   console.log(err);
+   return respondInternalFailure(response);
+  }
+
+  response.setHeader("Content-Type", "text/html");
+  response.statusCode = 200;
+  return response.end(data);
+ }
+ return fs.readFile(path, fileback);
+}
+
 function respond(q, s){
  var url = q.url.split("?")[0];
- if(url in staticHtml){
-  s.setHeader("Content-Type", "text/html");
-  return require("fs").readFile(
-   staticHtml[url],
-   function(err, data){
-    if(err){
-     console.log(err);
-     s.setHeader("Content-Type", "text/plain");
-     s.statusCode = 500;
-     return s.end("oops!")
-    }
-    s.setHeader("Content-Type", "text/html");
-    s.statusCode = 200;
-    s.end(data);
-   }
-  );
- }
- s.setHeader("Content-Type", "text/plain");
- s.statusCode = 404;
- s.end("Not Found");
+ if(url in staticHtml)
+  return respondStatic(url, s);
+ return respondNotFound(s);
 }
 
 function serve(port){
- return require("http").createServer(respond).listen(
-  port,
-  console.log.bind(console, "http://localhost:" + (+port))
- );
+ var http = require("http");
+ var server = http.createServer(respond);
+ var url = "http://localhost:" + (+port);
+ var afterListen = console.log.bind(console, url);
+ return server.listen(port, afterListen);
 }
 
 serve(8080);
