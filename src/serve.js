@@ -12,7 +12,10 @@ var staticHtml = {
  "/prose/client.html": "../prose/client.html",
  "/prose/desktop.html": "../prose/desktop.html",
  "/prose/mobile.html": "../prose/mobile.html",
- "/prose/contact.html": "../prose/contact.html"
+ "/prose/contact.html": "../prose/contact.html",
+ "/prose/todo.html": "../prose/todo.html",
+ "/prose/contributing.html": "../prose/contributing.html",
+ "/prose/license.html": "../prose/license.html"
 }
 
 function respondPlain(response, status, body){
@@ -34,7 +37,12 @@ function respondStatic(url, response){
  var path = staticHtml[url];
  function fileback(err, data){
   if(err){
-   console.log(err);
+   if(34 == err.errno)
+    if("ENOENT" == err.code){
+     console.log("not found:", url, "->", err.path);
+     return respondNotFound(response);
+    }
+   console.log([err.errno, err.code]);
    return respondInternalFailure(response);
   }
 
