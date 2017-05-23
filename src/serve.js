@@ -1,7 +1,16 @@
 // notes on this server should be in ../prose/server.html
 
 var staticHtml = {
- "/": "./static/index.html"
+ "/": "./static/index.html",
+ "/index.html": "../index.html",
+ "/prose/browserbased.html": "../prose/browserbased.html",
+ "/prose/zui.html": "../prose/zui.html",
+ "/prose/collaboration.html": "../prose/collaboration.html",
+ "/prose/drawing.html": "../prose/drawing.html",
+ "/prose/server.html": "../prose/server.html",
+ "/prose/client.html": "../prose/client.html",
+ "/prose/desktop.html": "../prose/desktop.html",
+ "/prose/mobile.html": "../prose/mobile.html"
 }
 
 function respondPlain(response, status, body){
@@ -38,6 +47,11 @@ function respond(q, s){
  var url = q.url.split("?")[0];
  if(url in staticHtml)
   return respondStatic(url, s);
+ if(url == "/src/serve.js"){
+  var ghu = "https://github.com/calcnerd256/pseudowhiteboard/blob/master/src/serve.js";
+  s.setHeader("Location", ghu);
+  return respondPlain(s, 302, "redirecting to GitHub")
+ }
  return respondNotFound(s);
 }
 
