@@ -2,6 +2,7 @@
 
 var staticHtml = {
  "/": "./static/index.html",
+
  "/index.html": "../index.html",
  "/prose/browserbased.html": "../prose/browserbased.html",
  "/prose/zui.html": "../prose/zui.html",
@@ -10,7 +11,8 @@ var staticHtml = {
  "/prose/server.html": "../prose/server.html",
  "/prose/client.html": "../prose/client.html",
  "/prose/desktop.html": "../prose/desktop.html",
- "/prose/mobile.html": "../prose/mobile.html"
+ "/prose/mobile.html": "../prose/mobile.html",
+ "/prose/contact.html": "../prose/contact.html"
 }
 
 function respondPlain(response, status, body){
