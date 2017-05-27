@@ -53,15 +53,30 @@ function respondStatic(url, response){
  return fs.readFile(path, fileback);
 }
 
+function redirectToGithub(response){
+ var protocol = "https";
+ var domain = ["github", "com"].join(".");
+ var username = "calcnerd256";
+ var repository = "pseudowhiteboard";
+ var url = [
+  protocol + "://" + domain,
+  username,
+  repository,
+  "blob",
+  "master",
+  "src",
+  "serve.js"
+ ].join("/");
+ response.setHeader("Location", url);
+ return respondPlain(response, 302, "redirecting to GitHub")
+}
+
 function respond(q, s){
  var url = q.url.split("?")[0];
  if(url in staticHtml)
   return respondStatic(url, s);
- if(url == "/src/serve.js"){
-  var ghu = "https://github.com/calcnerd256/pseudowhiteboard/blob/master/src/serve.js";
-  s.setHeader("Location", ghu);
-  return respondPlain(s, 302, "redirecting to GitHub")
- }
+ if(url == "/src/serve.js")
+  return redirectToGithub(s);
  return respondNotFound(s);
 }
 
