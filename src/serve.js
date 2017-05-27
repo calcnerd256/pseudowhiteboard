@@ -2,6 +2,7 @@
 
 var staticHtml = {
  "/": "./static/index.html",
+ "/desktop.html": "./static/desktop.html",
 
  "/index.html": "../index.html",
  "/prose/browserbased.html": "../prose/browserbased.html",
@@ -80,12 +81,18 @@ function respond(q, s){
  return respondNotFound(s);
 }
 
-function serve(port){
+function serve(port, ssid, ip){
  var http = require("http");
  var server = http.createServer(respond);
- var url = "http://localhost:" + (+port);
+ var domain = ip ? ip : "localhost";
+ var path = "/desktop.html";
+ var url = "http://" + domain + ":" + (+port) + path;
  var afterListen = console.log.bind(console, url);
  return server.listen(port, afterListen);
 }
 
-serve(8080);
+serve(
+ process.argv[2],
+ process.argv[3],
+ process.argv[4]
+);
