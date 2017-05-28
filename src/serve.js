@@ -19,7 +19,8 @@ var staticHtml = {
  "/prose/license.html": "../prose/license.html"
 };
 var staticFiles = {
- "/desktop.js": ["application/javascript", "./static/desktop.js"]
+ "/desktop.js": ["application/javascript", "./static/desktop.js"],
+ "/ajax.js": ["application/javascript", "./static/ajax.js"]
 };
 
 function respondPlain(response, status, body){
@@ -55,7 +56,7 @@ function respondFile(response, path, mimetype){
 }
 function respondStaticHtml(url, response){
  if(!(url in staticHtml)) return respondNotFound(response);
- return respondFile(response, staticHtml[url], "text/html");
+ return respondFile(response, staticHtml[url], "text/html; charset=utf-8");
 }
 function respondStatic(url, response){
  if(!(url in staticFiles)) return respondNotFound(response);
