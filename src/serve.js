@@ -17,7 +17,10 @@ var staticHtml = {
  "/prose/todo.html": "../prose/todo.html",
  "/prose/contributing.html": "../prose/contributing.html",
  "/prose/license.html": "../prose/license.html"
-}
+};
+var staticFiles = {
+ "/desktop.js": ["application/javascript", "./static/desktop.js"]
+};
 
 function respondPlain(response, status, body){
  response.setHeader("Content-Type", "text/plain");
@@ -32,26 +35,32 @@ function respondInternalFailure(s){
  return respondPlain(s, 500, "oops!");
 }
 
-function respondStatic(url, response){
- if(!(url in staticHtml)) return respondNotFound(response);
- var fs = require("fs");
- var path = staticHtml[url];
+function respondFile(response, path, mimetype){
  function fileback(err, data){
   if(err){
    if(34 == err.errno)
     if("ENOENT" == err.code){
-     console.log("not found:", url, "->", err.path);
+     console.log("not found:", path);
      return respondNotFound(response);
     }
    console.log([err.errno, err.code]);
    return respondInternalFailure(response);
   }
 
-  response.setHeader("Content-Type", "text/html");
+  response.setHeader("Content-Type", mimetype);
   response.statusCode = 200;
   return response.end(data);
  }
- return fs.readFile(path, fileback);
+ return require("fs").readFile(path, fileback);
+}
+function respondStaticHtml(url, response){
+ if(!(url in staticHtml)) return respondNotFound(response);
+ return respondFile(response, staticHtml[url], "text/html");
+}
+function respondStatic(url, response){
+ if(!(url in staticFiles)) return respondNotFound(response);
+ var resource = staticFiles[url];
+ return respondFile(response, resource[1], resource[0]);
 }
 
 function redirectToGithub(response){
@@ -80,6 +89,8 @@ function make_respond(sip){
  function respond(q, s){
   var url = q.url.split("?")[0];
   if(url in staticHtml)
+   return respondStaticHtml(url, s);
+  if(url in staticFiles)
    return respondStatic(url, s);
   if(url == "/src/serve.js")
    return redirectToGithub(s);
