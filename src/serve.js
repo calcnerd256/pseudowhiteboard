@@ -82,21 +82,41 @@ function redirectToGithub(response){
  return respondPlain(response, 302, "redirecting to GitHub")
 }
 
+function respondChatopsdb(request, response, db){
+ if("POST" == request.method.toUpperCase()){
+  // TODO: read the body
+  return respondNotFound(response);
+ }
+ var body = db.map(
+  function(line){
+   // TODO
+   return line;
+  }
+ ).join("\n");
+ return respondPlain(response, 200, body);
+}
+
 function make_respond(sip){
  var strings = {
   "/ssid.txt": sip[0],
   "/url.txt": "http://" + sip[1] + ":" + (+(sip[2])) + "/"
  };
+ var db = [];
  function respond(q, s){
   var url = q.url.split("?")[0];
-  if(url in staticHtml)
-   return respondStaticHtml(url, s);
-  if(url in staticFiles)
-   return respondStatic(url, s);
-  if(url == "/src/serve.js")
-   return redirectToGithub(s);
-  if(url in strings)
-   return respondPlain(s, 200, strings[url]);
+  if("GET" == q.method.toUpperCase()){
+   if(url in staticHtml)
+    return respondStaticHtml(url, s);
+   if(url in staticFiles)
+    return respondStatic(url, s);
+   if(url == "/src/serve.js")
+    return redirectToGithub(s);
+   if(url in strings)
+    return respondPlain(s, 200, strings[url]);
+  }
+  var codUrl = "/chatopsdb"
+  if(codUrl == url || (codUrl + "/") == url.substring(0, codUrl.length + 1))
+   return respondChatopsdb(q, s, db);
   return respondNotFound(s);
  }
  return respond;

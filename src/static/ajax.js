@@ -4,10 +4,14 @@ function promiseRequest(method, path, data){
    var xhr = new XMLHttpRequest();
    xhr.open("GET", path, true);
    xhr.onreadystatechange = function(){
-    if(xhr.readyState == XMLHttpRequest.DONE)
+    if(XMLHttpRequest.HEADERS_RECEIVED == xhr.readyState)
+     return;
+    if(xhr.readyState == XMLHttpRequest.DONE){
      if(200 == xhr.status)
       return resolve(xhr.responseText);
-    // TODO: handle failure
+     // TODO: handle failure better than this
+     return reject(xhr.responseText);
+    }
    };
    xhr.send(data);
   }
