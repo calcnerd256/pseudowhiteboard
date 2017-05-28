@@ -72,18 +72,27 @@ function redirectToGithub(response){
  return respondPlain(response, 302, "redirecting to GitHub")
 }
 
-function respond(q, s){
- var url = q.url.split("?")[0];
- if(url in staticHtml)
-  return respondStatic(url, s);
- if(url == "/src/serve.js")
-  return redirectToGithub(s);
- return respondNotFound(s);
+function make_respond(sip){
+ var strings = {
+  "/ssid.txt": sip[0],
+  "/url.txt": "http://" + sip[1] + ":" + (+(sip[2])) + "/"
+ };
+ function respond(q, s){
+  var url = q.url.split("?")[0];
+  if(url in staticHtml)
+   return respondStatic(url, s);
+  if(url == "/src/serve.js")
+   return redirectToGithub(s);
+  if(url in strings)
+   return respondPlain(s, 200, strings[url]);
+  return respondNotFound(s);
+ }
+ return respond;
 }
 
 function serve(port, ssid, ip){
  var http = require("http");
- var server = http.createServer(respond);
+ var server = http.createServer(make_respond([ssid, ip, port]));
  var domain = ip ? ip : "localhost";
  var path = "/desktop.html";
  var url = "http://" + domain + ":" + (+port) + path;
