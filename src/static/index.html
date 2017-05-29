@@ -3,13 +3,19 @@
   <title>Pseudowhiteboard</title>
   <script src="./ajax.js"></script>
   <script>
+   function promiseSendMessage(message){
+    var payload = "message=" + message.split(" ").map(
+     encodeURIComponent
+    ).join("+");
+    return promiseRequest("POST", "/chatopsdb", "message=" + message)
+   }
   </script>
  </head>
  <body>
   <p>This page is where the mobile client will be.</p>
   <form action="/chatopsdb/" method="POST">
    chat
-   <input type="text" name="chat"></input>
+   <input type="text" name="message"></input>
    <input type="submit"></input>
   </form>
  </body>

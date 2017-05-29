@@ -82,61 +82,100 @@ function redirectToGithub(response){
  return respondPlain(response, 302, "redirecting to GitHub")
 }
 
-function Promise(maker){
- var goods = [];
- var bads = [];
- var done = false;
- var good;
- var value;
- var error;
- this.then = function(goodback, badback){
-  if(done){
-   if(good){
-    if(goodback)
-     return Promise.resolve(goodback(value));
-    return this;
-   }
-   if(badback)
-    return Promise.resolve(badback(error));
-   return this;
+function Future(){
+ this.done = false;
+ this.listeners = [];
+}
+Future.prototype.listen = function listen(listener){
+ if(this.done) return listener(this.value);
+ this.listeners.push(listener);
+};
+Future.prototype.resolve = function resolve(value){
+ if(this.done) return;
+ this.done = true;
+ this.value = value;
+ return this.listeners.map(
+  function(f){return f(value);}
+ );
+};
+function Maybe(value, error){
+ if(arguments.length > 1) this.error = error;
+ else this.value = value;
+ this["throw"] = function(){
+  throw(this.error);
+ }
+}
+Maybe.prototype["throw"] = function(){
+ if("error" in this)
+  throw(this.error);
+};
+
+var Promise;
+if(!Promise){
+ Promise = function Promise(maker){
+  var future = new Future();
+  function resolve(value){
+   if("then" in value)
+    value.then(
+     function(v){
+      future.resolve(new Maybe(v));
+     },
+     function(e){
+      future.resolve(new Maybe(null, e));
+     }
+    );
+   else
+    future.resolve(new Maybe(value));
   }
-  goods.push(goodback);
-  bads.push(badback);
+  function reject(error){
+   future.resolve(new Maybe(null, error));
+  }
+  try{
+   maker(resolve, reject);
+  }
+  catch(e){
+   reject(e);
+  }
+  this.then = function(goodback, badback){
+   return new Promise(
+    function(res, rej){
+     future.listen(
+      function(m){
+       var eim = "error" in m;
+       var pass = eim ? rej : res;
+       var p = eim ? m.error : m.value;
+       var back = eim ? badback : goodback;
+       if(!back) return pass(p);
+       try{
+        return res(back(p));
+       }
+       catch(e){
+        return rej(e);
+       }
+      }
+     );
+    }
+   );
+  };
  }
- function resolve(val){
-  if(done) return;
-  done = true;
-  good = true;
-  value = val;
-  goods.map(function(g){return g(val);});
- }
- function reject(err){
-  if(done) return;
-  done = true;
-  good = false;
-  error = err;
-  bads.map(function(b){return b(err);});
-  process.nextTick(
-   function(){
-    if(!bads.length)
-     throw(error);
+ Promise.resolve = function(value){
+  if("then" in value) return value;
+  return new Promise(
+   function(res){
+    return res(value);
    }
   );
  }
- try{
-  maker(resolve, reject);
- }
- catch(e){
-  reject(e);
- }
 }
-Promise.resolve = function(value){
- if("then" in value) return value;
- return {
-  then: function(goodback, badback){
-   return Promise.resolve(goodback(value));
+
+function dict(pairs){
+ var result = {};
+ pairs.map(
+  function(kv){
+   result[kv[0]] = kv[1];
   }
- }
+ );
+ return result;
 }
 
 function promiseReadUrlencodedForm(q){
@@ -156,7 +195,7 @@ function promiseReadUrlencodedForm(q){
        var tokens = kv.split("=");
        var k = tokens.shift();
        var v = tokens.join("=");
-       return [k, v].map(decodeURIComponent);
+       return [k, v.split("+").join(" ")].map(decodeURIComponent);
       }
      );
      res(pairs);
@@ -176,9 +215,10 @@ function respondChatopsdbPOST(q, s, db){
   handle = Object.keys(clients).length;
   clients[addr] = handle;
  }
- promiseReadUrlencodedForm(q).then(
-  function(pairs){
-   //TODO
+ promiseReadUrlencodedForm(q).then(dict).then(
+  function(formData){
+   if("message" in formData)
+    var message = formData.message;
    return respondNotFound(s);
   }
  );
