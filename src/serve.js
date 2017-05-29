@@ -82,15 +82,113 @@ function redirectToGithub(response){
  return respondPlain(response, 302, "redirecting to GitHub")
 }
 
-function respondChatopsdb(request, response, db){
- if("POST" == request.method.toUpperCase()){
-  // TODO: read the body
-  return respondNotFound(response);
+function Promise(maker){
+ var goods = [];
+ var bads = [];
+ var done = false;
+ var good;
+ var value;
+ var error;
+ this.then = function(goodback, badback){
+  if(done){
+   if(good){
+    if(goodback)
+     return Promise.resolve(goodback(value));
+    return this;
+   }
+   if(badback)
+    return Promise.resolve(badback(error));
+   return this;
+  }
+  goods.push(goodback);
+  bads.push(badback);
  }
- var body = db.map(
+ function resolve(val){
+  if(done) return;
+  done = true;
+  good = true;
+  value = val;
+  goods.map(function(g){return g(val);});
+ }
+ function reject(err){
+  if(done) return;
+  done = true;
+  good = false;
+  error = err;
+  bads.map(function(b){return b(err);});
+  process.nextTick(
+   function(){
+    if(!bads.length)
+     throw(error);
+   }
+  );
+ }
+ try{
+  maker(resolve, reject);
+ }
+ catch(e){
+  reject(e);
+ }
+}
+Promise.resolve = function(value){
+ if("then" in value) return value;
+ return {
+  then: function(goodback, badback){
+   return Promise.resolve(goodback(value));
+  }
+ }
+}
+
+function promiseReadUrlencodedForm(q){
+ var body = "";
+ function chomp(chunk){
+  body += chunk.toString("ascii");
+ }
+ q.on("data", chomp);
+ return new Promise(
+  function(res, rej){
+   q.on(
+    "end",
+    function(lastChunk){
+     if(lastChunk) chomp(lastChunk);
+     var pairs = body.split("&").map(
+      function(kv){
+       var tokens = kv.split("=");
+       var k = tokens.shift();
+       var v = tokens.join("=");
+       return [k, v].map(decodeURIComponent);
+      }
+     );
+     res(pairs);
+    }
+   );
+  }
+ );
+}
+
+function respondChatopsdbPOST(q, s, db){
+ var addr = q.socket.remoteAddress;
+ var clients = db.clients;
+ var handle = null;
+ if(addr in clients)
+  handle = clients[addr];
+ else{
+  handle = Object.keys(clients).length;
+  clients[addr] = handle;
+ }
+ promiseReadUrlencodedForm(q).then(
+  function(pairs){
+   //TODO
+   return respondNotFound(s);
+  }
+ );
+}
+function respondChatopsdb(request, response, db){
+ if("POST" == request.method.toUpperCase())
+  return respondChatopsdbPOST(request, response, db);
+ var body = db.messages.map(
   function(line){
-   // TODO
-   return line;
+   return line.split("\n").join(" ");
   }
  ).join("\n");
  return respondPlain(response, 200, body);
@@ -101,7 +199,7 @@ function make_respond(sip){
   "/ssid.txt": sip[0],
   "/url.txt": "http://" + sip[1] + ":" + (+(sip[2])) + "/"
  };
- var db = [];
+ var db = {messages: [], clients: {}};
  function respond(q, s){
   var url = q.url.split("?")[0];
   if("GET" == q.method.toUpperCase()){

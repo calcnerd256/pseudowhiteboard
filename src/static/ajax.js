@@ -2,7 +2,7 @@ function promiseRequest(method, path, data){
  return new Promise(
   function(resolve, reject){
    var xhr = new XMLHttpRequest();
-   xhr.open("GET", path, true);
+   xhr.open(method, path, true);
    xhr.onreadystatechange = function(){
     if(XMLHttpRequest.HEADERS_RECEIVED == xhr.readyState)
      return;
