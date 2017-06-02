@@ -19,8 +19,12 @@ var staticHtml = {
  "/prose/license.html": "../prose/license.html"
 };
 var staticFiles = {
- "/desktop.js": ["application/javascript", "./static/desktop.js"],
- "/ajax.js": ["application/javascript", "./static/ajax.js"]
+ "/desktop.js": [
+  "application/javascript; charset=utf-8",
+  "./static/desktop.js"
+ ],
+ "/ajax.js": ["application/javascript; charset=utf-8", "./static/ajax.js"],
+ "/client.js": ["application/javascript; charset=utf-8", "./static/client.js"]
 };
 
 function respondPlain(response, status, body){
