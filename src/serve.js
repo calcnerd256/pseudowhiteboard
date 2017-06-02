@@ -24,9 +24,9 @@ var staticFiles = {
 };
 
 function respondPlain(response, status, body){
- response.setHeader("Content-Type", "text/plain");
+ response.setHeader("Content-Type", "text/plain; charset=utf-8");
  response.statusCode = status;
- return response.end(body);
+ return response.end("" + body);
 }
 
 function respondNotFound(s){
@@ -217,8 +217,17 @@ function respondChatopsdbPOST(q, s, db){
  }
  promiseReadUrlencodedForm(q).then(dict).then(
   function(formData){
-   if("message" in formData)
-    var message = formData.message;
+   if("message" in formData){
+    var log = db.messages;
+    var body = formData.message.split("\n").map(
+     function(line){
+      var result = log.length;
+      log.push(handle + ": " + line);
+      return result;
+     }
+    ).join("\n");
+    return respondPlain(s, 200, body);
+   }
    return respondNotFound(s);
   }
  );
