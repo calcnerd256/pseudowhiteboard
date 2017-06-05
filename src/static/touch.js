@@ -10,7 +10,12 @@ function getBrowserViewport(){
  y = Math.max(doc["clientHeight"], win["innerHeight"]);
  return {w: x, h: y};
 }
-function drawLine(ctx, xs, ys, xe, ye){
+function drawLine(ctx, xs, ys, xe, ye, w){
+ if(arguments.length < 6) w = 0;
+ if(w < 0) w = 0;
+ w += .125;
+ ctx.lineWidth = w * 10;
+ ctx.lineCap = "round";
  ctx.beginPath();
  ctx.moveTo(xs, ys);
  ctx.lineTo(xe, ye);
@@ -22,25 +27,77 @@ function Stroke(index, firstTouch, ctx, strokeStyle){
  this.points = [];
  if(arguments.length >= 4)
   this.strokeStyle = strokeStyle;
- this.addPoint(firstTouch.screenX, firstTouch.screenY, ctx);
+ this.addPoint(firstTouch, ctx);
 }
 Stroke.prototype.strokeStyle = "#000000";
-Stroke.prototype.addPoint = function addPoint(x, y, ctx){
+Stroke.prototype.addPoint = function addPoint(touch, ctx){
+ var x = touch.clientX;
+ var y = touch.clientY;
+ var r = Math.max(touch.radiusX, touch.radiusY);
  this.x = x;
  this.y = y;
  this.ctx = ctx;
- this.points.push([x, y]);
+ this.points.push([x, y, new Date(), r]);
 }
 Stroke.prototype.done = false;
 Stroke.prototype.end = function end(){
  this.done = true;
+ if("msgid" in this) return;
+ this.msgid = "pending";
+ var that = this;
+ var msg = "stroke " +
+  this.points.map(
+   function(xytr){
+    var xy = xytr[0] + "," + xytr[1];
+    var stamp = (xytr[2] - new Date(0));
+    var tr = stamp + "," + xytr[3];
+    return xy + ";" + tr;
+   }
+  ).join(" ");
+ return promiseSendMessage(msg).then(
+  function(msgid){
+   if(!msgid) delete that.msgid;
+   that.msgid = +msgid;
+  }
+ ).then(promiseReadChatroom).then(
+  function(lines){
+   lines.filter(
+    function(line){
+     var prefix = "stroke ";
+     return prefix == line[1].substring(0, prefix.length);
+    }
+   ).map(
+    function(stroke){
+     var tokens = stroke[1].split(" ");
+     if("stroke" != tokens.shift()) return;
+     var points = tokens.map(
+      function(token){
+       var pm = token.split(";").map(function(s){return s.split(",");});
+       var xy = pm[0];
+       var t = pm[1][0];
+       var r = 0;
+       if(pm[1].length > 1) r = pm[1][1];
+       return [xy[0], xy[1], t, r];
+      }
+     );
+     points.map(
+      function(x, i, a){
+       var p = a[i?i-1:i];
+       that.ctx.strokeStile = "#808080";
+       drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
+      }
+     );
+    }
+   )
+  }
+ );
 };
 Stroke.prototype.moveTo = function moveTo(nextTouch, ctx){
- var x = nextTouch.screenX;
- var y = nextTouch.screenY;
+ var x = nextTouch.clientX;
+ var y = nextTouch.clientY;
  this.ctx.strokeStyle = "#8080ff";
- drawLine(this.ctx, this.x, this.y, x, y);
- this.addPoint(x, y, ctx);
+ drawLine(this.ctx, this.x, this.y, x, y, 2);
+ this.addPoint(nextTouch, ctx);
 };
 Stroke.prototype.draw = function(){
  this.ctx.strokeStyle = this.strokeStyle;
@@ -64,7 +121,7 @@ Stroke.prototype.draw = function(){
    if(!that.done)
     that.ctx.strokeStyle = colors[i % colors.length];
    var p = a[i?i-1:i];
-   return drawLine(that.ctx, p[0], p[1], x[0], x[1]);
+   return drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
   }
  );
 }
