@@ -35,6 +35,28 @@
   <p>
    Communication between clients looks like like an IRC chatroom.
   </p>
+  <p>
+   Handles are integer pseudonyms, automatically incrementing, zero-indexed.
+   They are assigned on a first-come, first-served basis when users speak.
+  </p>
+  <p>
+   For the
+    <abbr title="minimum viable product">MVP</abbr>,
+    the only supported operations are
+     appending to the chatroom and
+     reading the room's entire log.
+  <p>
+  <p>
+   Because the log uses linebreaks as delimiters,
+    newlines are stripped out of the database records.
+  </p>
+  <p>
+   The database does not persist.
+   Terminating the server forgets the history.
+  </p>
+  <p>
+   There is no import mechanism at this time.
+  </p>
   <h3>server software</h3>
   <p>
    The webserver is written in
@@ -53,8 +75,8 @@
   </p>
   <h4>running</h4>
   <p>
-   To run the webserver, cd into the src directory and
-    <pre>nodejs ./serve.js</pre>
+   To run the webserver, cd into the src directory as a sudoer and run
+    <pre>./serve.sh</pre>
     then visit the URL it prints to stdout.
   </p>
   <p>
@@ -67,8 +89,8 @@
   <h4>TODO</h4>
   <h5>chatopsdb</h5>
   <p>
-   The server will need to broker messages between clients.
-   For the MVP, we can just append to the log and fetch the whole log.
+   It would be nice to persist the database, or at least import a copy.
+   Pseudonyms make import nontrivial.
   </p>
  </body>
 </html>
