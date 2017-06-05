@@ -1,9 +1,11 @@
 <html>
  <head>
   <title>Pseudowhiteboard</title>
+  <script src="./promise.js"></script>
   <script src="./ajax.js"></script>
   <script src="./client.js"></script>
   <script>
+   function init(){
 /*
 * /
    hello().then(
@@ -11,14 +13,22 @@
     console.log.bind(console, "bad")
    );
 // */
+   }
+   window.onload = init;
   </script>
+  <style>
+   #canv{
+    border: 1px solid black;
+    width: 100%;
+    height: 100%;
+   }
+  </style>
  </head>
  <body>
-  <p>This page is where the mobile client will be.</p>
-  <form action="/chatopsdb/" method="POST">
-   chat
-   <input type="text" name="message"></input>
-   <input type="submit"></input>
-  </form>
+  <canvas id="canv">
+   <p>
+    Your browser doesn't appear to support the drawing surface.
+   </p>
+  </canvas>
  </body>
 </html>
