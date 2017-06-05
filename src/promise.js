@@ -31,7 +31,7 @@ if(!Promise){
  Promise = function Promise(maker){
   var future = new Future();
   function resolve(value){
-   if("then" in value)
+   if(value instanceof Object && ("then" in value))
     value.then(
      function(v){
       future.resolve(new Maybe(v));
@@ -73,12 +73,21 @@ if(!Promise){
     }
    );
   };
- };
+ }
  Promise.resolve = function(value){
-  if("then" in value) return value;
+  if(value instanceof Object)
+   if("then" in value)
+    return value;
   return new Promise(
    function(res){
     return res(value);
+   }
+  );
+ }
+ Promise.reject = function(error){
+  return new Promise(
+   function(res, rej){
+    return rej(error);
    }
   );
  };
