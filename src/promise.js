@@ -91,6 +91,23 @@ if(!Promise){
    }
   );
  };
+ Promise.all = function(promises){
+  return [].slice.call(promises).reduce(
+   function(folded, prom){
+    return folded.then(
+     function(results){
+      return prom.then(
+       function(result){
+        results.push(result);
+	return results;
+       }
+      );
+     }
+    );
+   },
+   Promise.resolve([])
+  );
+ };
  try{
   exports.Promise = Promise;
  }
