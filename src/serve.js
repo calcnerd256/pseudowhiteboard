@@ -25,7 +25,8 @@ var staticFiles = {
  ],
  "/ajax.js": ["application/javascript; charset=utf-8", "./static/ajax.js"],
  "/client.js": ["application/javascript; charset=utf-8", "./static/client.js"],
- "/promise.js": ["application/javascript; charset=utf-8", "./promise.js"]
+ "/promise.js": ["application/javascript; charset=utf-8", "./promise.js"],
+ "/touch.js": ["application/javascript; charset=utf-8", "./static/touch.js"]
 };
 
 function respondPlain(response, status, body){
