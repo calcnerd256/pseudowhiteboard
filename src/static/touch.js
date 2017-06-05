@@ -17,11 +17,14 @@ function drawLine(ctx, xs, ys, xe, ye){
  ctx.stroke();
 }
 
-function Stroke(index, firstTouch, ctx){
+function Stroke(index, firstTouch, ctx, strokeStyle){
  this.index = index;
  this.points = [];
+ if(arguments.length >= 4)
+  this.strokeStyle = strokeStyle;
  this.addPoint(firstTouch.screenX, firstTouch.screenY, ctx);
 }
+Stroke.prototype.strokeStyle = "#000000";
 Stroke.prototype.addPoint = function addPoint(x, y, ctx){
  this.x = x;
  this.y = y;
@@ -35,16 +38,31 @@ Stroke.prototype.end = function end(){
 Stroke.prototype.moveTo = function moveTo(nextTouch, ctx){
  var x = nextTouch.screenX;
  var y = nextTouch.screenY;
+ this.ctx.strokeStyle = "#8080ff";
  drawLine(this.ctx, this.x, this.y, x, y);
  this.addPoint(x, y, ctx);
 };
 Stroke.prototype.draw = function(){
- this.ctx.strokeStyle = "#0000ff";
- if(!this.done)
-  this.ctx.strokeStyle = "#ff0000";
+ this.ctx.strokeStyle = this.strokeStyle;
  var that = this;
+ var colors = [
+  "#ff0000",
+  "#ff8000",
+  "#ffff00",
+  "#80ff00",
+  "#00ff00",
+  "#00ff80",
+  "#00ffff",
+  "#0080ff",
+  "#0000ff",
+  "#8000ff",
+  "#ff00ff",
+  "#ff0080"
+ ];
  return this.points.map(
   function(x, i, a){
+   if(!that.done)
+    that.ctx.strokeStyle = colors[i % colors.length];
    var p = a[i?i-1:i];
    return drawLine(that.ctx, p[0], p[1], x[0], x[1]);
   }
@@ -71,6 +89,12 @@ function promiseInitCanvas(canv){
   strokeQueue.push(stroke);
   return stroke;
  }
+ function endStroke(touch, ctx){
+  var stroke = strokes[touch.identifier];
+  stroke.moveTo(touch, ctx);
+  stroke.end();
+  return stroke;
+ }
  return Promise.resolve(canv.getContext("2d")).then(
   function(ctx){
    function animate(){
@@ -83,7 +107,10 @@ function promiseInitCanvas(canv){
      }
     );
     dirty = false;
-    return promiseNextFrame().then(animate);
+    var f = Promise.resolve();
+    for(var i = 0; i < 4; i++)
+     f = f.then(promiseNextFrame);
+    return f.then(animate);
    }
    var vp = getBrowserViewport();
    canv.width = vp.w - 16;
@@ -94,40 +121,30 @@ function promiseInitCanvas(canv){
     dirty = true;
    }
 
-   function start(touchEvent){
+   function makeStartStop(processTouch){
+    return function eventHandler(touchEvent){
+     consumeTouchEvent(touchEvent);
+     return [].slice.call(touchEvent.changedTouches).map(
+      function(touch){
+       return processTouch(touch, ctx);
+      }
+     );
+    };
+   }
+   function go(touchEvent){
     consumeTouchEvent(touchEvent);
-    return [].slice.call(touchEvent.changedTouches).map(
+    return [].slice.call(touchEvent.touches).map(
      function(touch){
-      return beginStroke(touch, ctx);
-     }
-    );
-   }
-   canv.addEventListener("touchstart", start);
-
-   function go(te){
-    consumeTouchEvent(te);
-    return [].slice.call(te.touches).map(
-     function(t){
-      var stroke = strokes[t.identifier];
-      stroke.moveTo(t, ctx);
-      return stroke;
-     }
-    );
-   }
-   canv.addEventListener("touchmove", go);
-
-   function stop(touchEvent){
-    consumeTouchEvent(touchEvent);
-    return [].slice.call(touchEvent.changedTouches).map(
-     function(touch, i, a){
       var stroke = strokes[touch.identifier];
       stroke.moveTo(touch, ctx);
-      stroke.end();
       return stroke;
      }
     );
    }
-   canv.addEventListener("touchend", stop);
+
+   canv.addEventListener("touchstart", makeStartStop(beginStroke));
+   canv.addEventListener("touchmove", go);
+   canv.addEventListener("touchend", makeStartStop(endStroke));
 
    animate();
    return ctx;
