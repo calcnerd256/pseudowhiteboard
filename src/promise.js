@@ -91,4 +91,8 @@ if(!Promise){
    }
   );
  };
+ try{
+  exports.Promise = Promise;
+ }
+ catch(e){}
 }
