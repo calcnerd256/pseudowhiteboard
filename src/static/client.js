@@ -2,7 +2,7 @@ function promiseSendMessage(message){
  var payload = "message=" + message.split(" ").map(
   encodeURIComponent
  ).join("+");
- return promiseRequest("POST", "/chatopsdb", "message=" + message)
+ return promiseRequest("POST", "/chatopsdb", payload);
 }
 function promiseReadChatroom(){
  return promiseGET("/chatopsdb").then(

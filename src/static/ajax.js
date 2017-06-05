@@ -1,4 +1,5 @@
 function promiseRequest(method, path, data){
+ var hasData = arguments.length >= 3;
  return new Promise(
   function(resolve, reject){
    var xhr = new XMLHttpRequest();
@@ -13,7 +14,10 @@ function promiseRequest(method, path, data){
      return reject(xhr.responseText);
     }
    };
-   xhr.send(data);
+   if(hasData)
+    xhr.send(data);
+   else
+    xhr.send();
   }
  );
 }

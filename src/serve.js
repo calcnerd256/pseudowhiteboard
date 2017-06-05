@@ -161,7 +161,7 @@ if(!Promise){
     }
    );
   };
- }
+ };
  Promise.resolve = function(value){
   if("then" in value) return value;
   return new Promise(
@@ -169,7 +169,7 @@ if(!Promise){
     return res(value);
    }
   );
- }
+ };
 }
 
 function dict(pairs){
