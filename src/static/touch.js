@@ -40,9 +40,8 @@ Stroke.prototype.addPoint = function addPoint(touch, ctx){
  this.points.push([x, y, new Date(), r]);
 }
 Stroke.prototype.done = false;
-Stroke.prototype.end = function end(){
- this.done = true;
- if("msgid" in this) return;
+Stroke.prototype.send = function send(){
+ if("msgid" in this) return Promise.resolve(this.msgid);
  this.msgid = "pending";
  var that = this;
  var msg = "stroke " +
@@ -56,12 +55,22 @@ Stroke.prototype.end = function end(){
   ).join(" ");
  return promiseSendMessage(msg).then(
   function(msgid){
-   if(!msgid) delete that.msgid;
-   that.msgid = +msgid;
+   if(!msgid)
+    delete that.msgid;
+   else
+    that.msgid = +msgid;
+   if("msgid" in that)
+    return that.msgid;
+   return Promise.reject(that);
   }
- ).then(promiseReadChatroom).then(
+ );
+}
+Stroke.prototype.end = function end(){
+ this.done = true;
+ var that = this;
+ this.send().then(promiseReadChatroom).then(
   function(lines){
-   lines.filter(
+   var strokes = lines.filter(
     function(line){
      var prefix = "stroke ";
      return prefix == line[1].substring(0, prefix.length);
@@ -69,7 +78,7 @@ Stroke.prototype.end = function end(){
    ).map(
     function(stroke){
      var tokens = stroke[1].split(" ");
-     if("stroke" != tokens.shift()) return;
+     if("stroke" != tokens.shift()) return [];
      var points = tokens.map(
       function(token){
        var pm = token.split(";").map(function(s){return s.split(",");});
@@ -87,8 +96,9 @@ Stroke.prototype.end = function end(){
        drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
       }
      );
+     return points;
     }
-   )
+   );
   }
  );
 };
@@ -124,6 +134,30 @@ Stroke.prototype.draw = function(){
    return drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
   }
  );
+};
+
+function Gesture(){
+ this.strokes = [];
+}
+Gesture.prototype.addStroke = function addStroke(stroke){
+ this.strokes.push(stroke);
+};
+Gesture.prototype.isDone = function isDone(){
+ return this.strokes.every(
+  function(stroke){
+   return stroke.done;
+  }
+ );
+};
+Gesture.prototype.end = function end(){
+ return Promise.all(
+  this.strokes.map(
+   function(stroke){
+    return stroke.send();
+   }
+  )
+ ).then(
+ );
 }
 
 function promiseNextFrame(){
@@ -135,21 +169,33 @@ function promiseNextFrame(){
 }
 
 function promiseInitCanvas(canv){
- var strokeQueue = [];
  var strokes = {};
  var dirty = true;
+ var activeGesture = null;
+ var gestures = [];
+ function beginGesture(stroke){
+  var gesture = new Gesture();
+  activeGesture = gesture;
+  gesture.addStroke(stroke);
+  gestures.push(gesture);
+ }
  function beginStroke(touch, ctx){
   var index = touch.identifier;
   if(index in strokes) strokes[index].end();
   var stroke = new Stroke(index, touch, ctx);
   strokes[index] = stroke;
-  strokeQueue.push(stroke);
+  if(!activeGesture) beginGesture(stroke);
+  else activeGesture.addStroke(stroke);
   return stroke;
  }
  function endStroke(touch, ctx){
   var stroke = strokes[touch.identifier];
   stroke.moveTo(touch, ctx);
   stroke.end();
+  if(activeGesture.isDone()){
+   activeGesture.end();
+   activeGesture = null;
+  }
   return stroke;
  }
  return Promise.resolve(canv.getContext("2d")).then(
@@ -158,7 +204,14 @@ function promiseInitCanvas(canv){
     if(!dirty)
      return promiseNextFrame().then(animate);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    strokeQueue.map(
+    [].concat.apply(
+     [],
+     gestures.map(
+      function(gesture){
+       return gesture.strokes;
+      }
+     )
+    ).map(
      function(stroke, i){
       stroke.draw();
      }
