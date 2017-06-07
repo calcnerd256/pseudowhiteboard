@@ -10,15 +10,17 @@ function getBrowserViewport(){
  y = Math.max(doc["clientHeight"], win["innerHeight"]);
  return {w: x, h: y};
 }
-function drawLine(ctx, xs, ys, xe, ye, w){
- if(arguments.length < 6) w = 0;
+function drawSegment(ctx, p, q, style){
+ if(arguments.length >= 4)
+  ctx.strokeStyle = style;
+ var w = Math.min(p.r, q.r);
  if(w < 0) w = 0;
  w += .125;
  ctx.lineWidth = w * 10;
  ctx.lineCap = "round";
  ctx.beginPath();
- ctx.moveTo(xs, ys);
- ctx.lineTo(xe, ye);
+ ctx.moveTo(p.x, p.y);
+ ctx.lineTo(q.x, q.y);
  ctx.stroke();
 }
 function promiseDrawRoom(ctx){
@@ -34,24 +36,19 @@ function promiseDrawRoom(ctx){
      if("stroke" != tokens.shift()) return [];
      var points = tokens.map(
       function(token){
-       var pm = token.split(";").map(
-        function(s){return s.split(",");}
-       );
-       var xy = pm[0];
-       var t = pm[1][0];
-       var r = 0;
-       if(pm[1].length > 1) r = pm[1][1];
-       return [xy[0], xy[1], t, r];
+       return Stroke.Point.fromChatStroke(token);
       }
      );
      points.map(
       function(x, i, a){
-       var p = a[i?i-1:i];
-       ctx.strokeStyle = "#808080";
-       drawLine(ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
+       drawSegment(ctx, a[i?i-1:i], x, "#808080");
       }
      );
-     return points;
+     return points.map(
+      function(p){
+       return p.toArray();
+      }
+     );
     }
    );
   }
@@ -65,6 +62,7 @@ function Stroke(index, firstTouch, ctx, strokeStyle){
   this.strokeStyle = strokeStyle;
  this.addPoint(firstTouch, ctx);
 }
+
 Stroke.Point = function Point(x, y, t, r){
  this.x = x;
  this.y = y;
@@ -78,18 +76,48 @@ Stroke.Point.fromTouch = function fromTouch(touch, ctx){
  var r = Math.max(touch.radiusX, touch.radiusY);
  return new this(x, y, t, r);
 };
+Stroke.Point.fromArray = function fromArray(arr){
+ return new this(arr[0], arr[1], arr[2], arr[3]);
+}
+Stroke.Point.fromChatStroke = function fromChatStroke(token){
+ var pm = token.split(";").map(
+  function(s){return s.split(",");}
+ );
+ var xy = pm[0];
+ var tr = pm[1];
+ var t = tr[0];
+ var r = 0;
+ if(tr.length > 1) r = tr[1];
+ return new this(
+  +(xy[0]),
+  +(xy[1]),
+  new Date(+t),
+  +r
+ );
+}
 Stroke.Point.prototype.toArray = function(){
  return [this.x, this.y, this.t, this.r];
 };
+Stroke.Point.prototype.toChatStroke = function toChatStroke(){
+ return [
+  [this.x, this.y],
+  [
+   this.t - new Date(0),
+   this.r
+  ]
+ ].map(
+  function(halves){
+   return halves.join(",");
+  }
+ ).join(";");
+}
+
 Stroke.prototype.strokeStyle = "#000000";
 Stroke.prototype.addPoint = function addPoint(touch, ctx){
- var x = touch.clientX;
- var y = touch.clientY;
- var r = Math.max(touch.radiusX, touch.radiusY);
- this.x = x;
- this.y = y;
+ this.x = touch.clientX;
+ this.y = touch.clientY;
  this.ctx = ctx;
- var p = new Stroke.Point(x, y, new Date(), r);
+ var p = Stroke.Point.fromTouch(touch, ctx);
  this.points.push(p.toArray());
 }
 Stroke.prototype.done = false;
@@ -100,10 +128,11 @@ Stroke.prototype.send = function send(){
  var msg = "stroke " +
   this.points.map(
    function(xytr){
-    var xy = xytr[0] + "," + xytr[1];
-    var stamp = (xytr[2] - new Date(0));
-    var tr = stamp + "," + xytr[3];
-    return xy + ";" + tr;
+    return Stroke.Point.fromArray(xytr);
+   }
+  ).map(
+   function(p){
+    p.toChatStroke();
    }
   ).join(" ");
  return promiseSendMessage(msg).then(
@@ -130,12 +159,15 @@ Stroke.prototype.end = function end(){
 Stroke.prototype.moveTo = function moveTo(nextTouch, ctx){
  var x = nextTouch.clientX;
  var y = nextTouch.clientY;
- this.ctx.strokeStyle = "#8080ff";
- drawLine(this.ctx, this.x, this.y, x, y, 2);
+ drawSegment(
+  ctx,
+  new Stroke.Point(this.x, this.y, new Date(), 2),
+  new Stroke.Point(x, y, new Date(), 2),
+  "#8080ff"
+ );
  this.addPoint(nextTouch, ctx);
 };
 Stroke.prototype.draw = function(){
- this.ctx.strokeStyle = this.strokeStyle;
  var that = this;
  var colors = [
   "#ff0000",
@@ -152,11 +184,17 @@ Stroke.prototype.draw = function(){
   "#ff0080"
  ];
  return this.points.map(
+  function(arr){
+   return Stroke.Point.fromArray(arr);
+  }
+ ).map(
   function(x, i, a){
-   if(!that.done)
-    that.ctx.strokeStyle = colors[i % colors.length];
-   var p = a[i?i-1:i];
-   return drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
+   return drawSegment(
+    that.ctx,
+    a[i ? i - 1 : i],
+    x,
+    that.done ? that.strokeStyle : colors[i % colors.length]
+   );
   }
  );
 };
