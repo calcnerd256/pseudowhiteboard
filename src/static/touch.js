@@ -21,6 +21,42 @@ function drawLine(ctx, xs, ys, xe, ye, w){
  ctx.lineTo(xe, ye);
  ctx.stroke();
 }
+function promiseDrawRoom(ctx){
+ function isStroke(line){
+  var prefix = "stroke ";
+  return prefix = line[1].substring(0, prefix.length);
+ }
+ return promiseReadChatroom().then(
+  function(lines){
+   return lines.filter(isStroke).map(
+    function(stroke){
+     var tokens = stroke[1].split(" ");
+     if("stroke" != tokens.shift()) return [];
+     var points = tokens.map(
+      function(token){
+       var pm = token.split(";").map(
+        function(s){return s.split(",");}
+       );
+       var xy = pm[0];
+       var t = pm[1][0];
+       var r = 0;
+       if(pm[1].length > 1) r = pm[1][1];
+       return [xy[0], xy[1], t, r];
+      }
+     );
+     points.map(
+      function(x, i, a){
+       var p = a[i?i-1:i];
+       ctx.strokeStyle = "#808080";
+       drawLine(ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
+      }
+     );
+     return points;
+    }
+   );
+  }
+ );
+}
 
 function Stroke(index, firstTouch, ctx, strokeStyle){
  this.index = index;
@@ -29,6 +65,22 @@ function Stroke(index, firstTouch, ctx, strokeStyle){
   this.strokeStyle = strokeStyle;
  this.addPoint(firstTouch, ctx);
 }
+Stroke.Point = function Point(x, y, t, r){
+ this.x = x;
+ this.y = y;
+ this.t = t;
+ this.r = r;
+};
+Stroke.Point.fromTouch = function fromTouch(touch, ctx){
+ var x = touch.clientX;
+ var y = touch.clientY;
+ var t = new Date();
+ var r = Math.max(touch.radiusX, touch.radiusY);
+ return new this(x, y, t, r);
+};
+Stroke.Point.prototype.toArray = function(){
+ return [this.x, this.y, this.t, this.r];
+};
 Stroke.prototype.strokeStyle = "#000000";
 Stroke.prototype.addPoint = function addPoint(touch, ctx){
  var x = touch.clientX;
@@ -37,7 +89,8 @@ Stroke.prototype.addPoint = function addPoint(touch, ctx){
  this.x = x;
  this.y = y;
  this.ctx = ctx;
- this.points.push([x, y, new Date(), r]);
+ var p = new Stroke.Point(x, y, new Date(), r);
+ this.points.push(p.toArray());
 }
 Stroke.prototype.done = false;
 Stroke.prototype.send = function send(){
@@ -68,37 +121,9 @@ Stroke.prototype.send = function send(){
 Stroke.prototype.end = function end(){
  this.done = true;
  var that = this;
- this.send().then(promiseReadChatroom).then(
-  function(lines){
-   var strokes = lines.filter(
-    function(line){
-     var prefix = "stroke ";
-     return prefix == line[1].substring(0, prefix.length);
-    }
-   ).map(
-    function(stroke){
-     var tokens = stroke[1].split(" ");
-     if("stroke" != tokens.shift()) return [];
-     var points = tokens.map(
-      function(token){
-       var pm = token.split(";").map(function(s){return s.split(",");});
-       var xy = pm[0];
-       var t = pm[1][0];
-       var r = 0;
-       if(pm[1].length > 1) r = pm[1][1];
-       return [xy[0], xy[1], t, r];
-      }
-     );
-     points.map(
-      function(x, i, a){
-       var p = a[i?i-1:i];
-       that.ctx.strokeStile = "#808080";
-       drawLine(that.ctx, p[0], p[1], x[0], x[1], Math.min(p[3], x[3]));
-      }
-     );
-     return points;
-    }
-   );
+ this.send().then(
+  function(){
+   return promiseDrawRoom(that.ctx);
   }
  );
 };
