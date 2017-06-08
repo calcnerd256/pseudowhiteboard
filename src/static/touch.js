@@ -23,6 +23,7 @@ function drawSegment(ctx, p, q, style){
  ctx.lineTo(q.x, q.y);
  ctx.stroke();
 }
+function I(x){return x;}
 function promiseDrawRoom(ctx){
  function isStroke(line){
   var prefix = "stroke ";
@@ -38,17 +39,13 @@ function promiseDrawRoom(ctx){
       function(token){
        return Stroke.Point.fromChatStroke(token);
       }
-     );
+     ).filter(I);
      points.map(
       function(x, i, a){
-       drawSegment(ctx, a[i?i-1:i], x, "#808080");
+       return drawSegment(ctx, a[i?i-1:i], x, "#808080");
       }
      );
-     return points.map(
-      function(p){
-       return p.toArray();
-      }
-     );
+     return points;
     }
    );
   }
@@ -76,13 +73,11 @@ Stroke.Point.fromTouch = function fromTouch(touch, ctx){
  var r = Math.max(touch.radiusX, touch.radiusY);
  return new this(x, y, t, r);
 };
-Stroke.Point.fromArray = function fromArray(arr){
- return new this(arr[0], arr[1], arr[2], arr[3]);
-}
 Stroke.Point.fromChatStroke = function fromChatStroke(token){
  var pm = token.split(";").map(
   function(s){return s.split(",");}
  );
+ if(1 == pm.length) return null;
  var xy = pm[0];
  var tr = pm[1];
  var t = tr[0];
@@ -95,9 +90,6 @@ Stroke.Point.fromChatStroke = function fromChatStroke(token){
   +r
  );
 }
-Stroke.Point.prototype.toArray = function(){
- return [this.x, this.y, this.t, this.r];
-};
 Stroke.Point.prototype.toChatStroke = function toChatStroke(){
  return [
   [this.x, this.y],
@@ -129,7 +121,7 @@ Stroke.prototype.send = function send(){
  var msg = "stroke " +
   this.points.map(
    function(p){
-    p.toChatStroke();
+    return p.toChatStroke();
    }
   ).join(" ");
  return promiseSendMessage(msg).then(
