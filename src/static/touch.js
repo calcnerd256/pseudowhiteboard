@@ -117,8 +117,9 @@ Stroke.prototype.addPoint = function addPoint(touch, ctx){
  this.x = touch.clientX;
  this.y = touch.clientY;
  this.ctx = ctx;
- var p = Stroke.Point.fromTouch(touch, ctx);
- this.points.push(p.toArray());
+ this.points.push(
+  Stroke.Point.fromTouch(touch, ctx)
+ );
 }
 Stroke.prototype.done = false;
 Stroke.prototype.send = function send(){
@@ -127,10 +128,6 @@ Stroke.prototype.send = function send(){
  var that = this;
  var msg = "stroke " +
   this.points.map(
-   function(xytr){
-    return Stroke.Point.fromArray(xytr);
-   }
-  ).map(
    function(p){
     p.toChatStroke();
    }
@@ -184,10 +181,6 @@ Stroke.prototype.draw = function(){
   "#ff0080"
  ];
  return this.points.map(
-  function(arr){
-   return Stroke.Point.fromArray(arr);
-  }
- ).map(
   function(x, i, a){
    return drawSegment(
     that.ctx,
