@@ -139,11 +139,7 @@ Stroke.prototype.send = function send(){
 Stroke.prototype.end = function end(){
  this.done = true;
  var that = this;
- this.send().then(
-  function(){
-   return promiseDrawRoom(that.ctx);
-  }
- );
+ return this.send();
 };
 Stroke.prototype.moveTo = function moveTo(nextTouch, ctx){
  var x = nextTouch.clientX;
@@ -197,7 +193,7 @@ Gesture.prototype.isDone = function isDone(){
   }
  );
 };
-Gesture.prototype.end = function end(){
+Gesture.prototype.end = function end(ctx){
  return Promise.all(
   this.strokes.map(
    function(stroke){
@@ -205,6 +201,9 @@ Gesture.prototype.end = function end(){
    }
   )
  ).then(
+  function(msgids){
+   return promiseDrawRoom(ctx);
+  }
  );
 }
 
@@ -241,7 +240,7 @@ function promiseInitCanvas(canv){
   stroke.moveTo(touch, ctx);
   stroke.end();
   if(activeGesture.isDone()){
-   activeGesture.end();
+   activeGesture.end(ctx);
    activeGesture = null;
   }
   return stroke;
