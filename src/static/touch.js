@@ -1,44 +1,23 @@
-function I(x){return x;}
-function drawSegment(ctx, p, q, style){
- if(arguments.length >= 4)
-  ctx.strokeStyle = style;
- var w = Math.min(p.r, q.r);
- if(w < 0) w = 0;
- w += .125;
- ctx.lineWidth = w * 10;
- ctx.lineCap = "round";
- ctx.beginPath();
- ctx.moveTo(p.x, p.y);
- ctx.lineTo(q.x, q.y);
- ctx.stroke();
-}
-function promiseDrawRoom(ctx){
- function isStroke(line){
-  var prefix = "stroke ";
-  return prefix = line[1].substring(0, prefix.length);
- }
- return promiseReadChatroom().then(
-  function(lines){
-   return lines.filter(isStroke).map(
-    function(stroke){
-     var tokens = stroke[1].split(" ");
-     if("stroke" != tokens.shift()) return [];
-     var points = tokens.map(
-      function(token){
-       return Stroke.Point.fromChatStroke(token);
-      }
-     ).filter(I);
-     points.map(
-      function(x, i, a){
-       return drawSegment(ctx, a[i?i-1:i], x, "#808080");
-      }
-     );
-     return points;
-    }
-   );
-  }
- );
-}
+Stroke.Point = function Point(x, y, t, r){
+ this.x = x;
+ this.y = y;
+ this.t = t;
+ this.r = r;
+};
+Stroke.Point.fromTouch = function fromTouch(touch, ctx){
+ var x = touch.clientX;
+ var y = touch.clientY;
+ var t = new Date();
+ var r = Math.max(touch.radiusX, touch.radiusY);
+ return new this(x, y, t, r);
+};
+
+Stroke.prototype.toString = function(){
+ return "stroke " + this.index;
+};
+Stroke.Point.prototype.toString = function(){
+ return "<" + [this.x, this.y].join(", ") + ">(" + this.r + ")@" + this.t;
+};
 
 Stroke.Point.fromChatStroke = function fromChatStroke(token){
  var pm = token.split(";").map(
@@ -71,6 +50,21 @@ Stroke.Point.prototype.toChatStroke = function toChatStroke(){
  ).join(";");
 }
 
+function drawSegment(ctx, p, q, style){
+ if(arguments.length >= 4)
+  ctx.strokeStyle = style;
+ var w = Math.min(p.r, q.r);
+ if(w < 0) w = 0;
+ w += .125;
+ ctx.lineWidth = w * 10;
+ ctx.lineCap = "round";
+ ctx.beginPath();
+ ctx.moveTo(p.x, p.y);
+ ctx.lineTo(q.x, q.y);
+ ctx.stroke();
+}
+
+
 Stroke.prototype.done = false;
 Stroke.prototype.send = function send(){
  if("msgid" in this) return Promise.resolve(this.msgid);
@@ -99,17 +93,6 @@ Stroke.prototype.end = function end(){
  var that = this;
  return this.send();
 };
-Stroke.prototype.moveTo = function moveTo(nextTouch, ctx){
- var x = nextTouch.clientX;
- var y = nextTouch.clientY;
- drawSegment(
-  ctx,
-  new Stroke.Point(this.x, this.y, new Date(), 2),
-  new Stroke.Point(x, y, new Date(), 2),
-  "#8080ff"
- );
- this.addPoint(nextTouch, ctx);
-};
 Stroke.prototype.draw = function(){
  var that = this;
  var colors = [
@@ -128,16 +111,94 @@ Stroke.prototype.draw = function(){
  ];
  return this.points.map(
   function(x, i, a){
-   return drawSegment(
-    that.ctx,
-    a[i ? i - 1 : i],
-    x,
-    that.done ? that.strokeStyle : colors[i % colors.length]
-   );
+   var color = that.done ? that.strokeStyle : colors[i % colors.length];
+   return that.camera.drawSegment(a[i?i-1:i],x,color);
   }
  );
 };
 
+function Place(x, y, scale, ctx){
+ this.x = x;
+ this.y = y;
+ this.scale = scale;
+ this.ctx = ctx;
+}
+Place.prototype.touchToPoint = function touchToPoint(touch){
+ var canv = this.ctx.canvas;
+ var w = canv.width;
+ var h = canv.height;
+ var s = w;
+ if(h < s) s = h;
+ var canvRect = canv.getBoundingClientRect();
+ var l = touch.clientX - (canvRect.left + canv.clientLeft);
+ var t = touch.clientY - (canvRect.top + canv.clientTop);
+ var x = l - w / 2;
+ var y = h / 2 - t;
+ var r = Math.max(touch.radiusX, touch.radiusY, .125);
+ return new Stroke.Point(
+  this.x + x * this.scale / s,
+  this.y + y * this.scale / s,
+  new Date(),
+  r * this.scale
+ );
+};
+Place.prototype.drawSegment = function drawSegment(p, q, style, r){
+ if(arguments.length >= 3) this.ctx.strokeStyle = style;
+ if(arguments.length < 4)
+  r = Math.min(p.r, q.r);
+ var w = this.ctx.canvas.width;
+ var h = this.ctx.canvas.height;
+ var s = w;
+ if(h < s) s = h;
+ r *= 10 / this.scale;
+ if(r < 0) r = 0;
+ if(r < .125) return;
+ this.ctx.lineWidth = r;
+ this.ctx.lineCap = "round";
+ this.ctx.beginPath();
+ var that = this;
+ function f(a, z, c){
+  return (a - z) * s /  that.scale + c / 2;
+ }
+ this.ctx.moveTo(f(p.x, this.x, w), h - f(p.y, this.y, h));
+ this.ctx.lineTo(f(q.x, this.x, w), h - f(q.y, this.y, h));
+ if(r > 1)
+  this.ctx.globalAlpha = 1/r;
+ this.ctx.stroke();
+ this.ctx.globalAlpha = 1;
+};
+Place.prototype.toString = function toString(){
+ return "<" + [this.x, this.y].join(", ") + ">*" + this.scale;
+}
+
+function I(x){return x;}
+function promiseDrawRoom(cam){
+ function isStroke(line){
+  var prefix = "stroke ";
+  return prefix = line[1].substring(0, prefix.length);
+ }
+ return promiseReadChatroom().then(
+  function(lines){
+   return lines.filter(isStroke).map(
+    function(stroke){
+     var tokens = stroke[1].split(" ");
+     if("stroke" != tokens.shift()) return [];
+     var points = tokens.map(
+      function(token){
+       return Stroke.Point.fromChatStroke(token);
+      }
+     ).filter(I);
+     points.map(
+      function(x, i, a){
+       return cam.drawSegment(a[i?i-1:i], x, "#808080");
+      }
+     );
+     return points;
+    }
+   );
+  }
+ );
+}
 
 function Gesture(){
  this.strokes = [];
@@ -152,7 +213,7 @@ Gesture.prototype.isDone = function isDone(){
   }
  );
 };
-Gesture.prototype.end = function end(ctx){
+Gesture.prototype.end = function end(cam){
  return Promise.all(
   this.strokes.map(
    function(stroke){
@@ -161,7 +222,7 @@ Gesture.prototype.end = function end(ctx){
   )
  ).then(
   function(msgids){
-   return promiseDrawRoom(ctx);
+   return promiseDrawRoom(cam);
   }
  );
 }
@@ -197,27 +258,28 @@ function promiseInitCanvas(canv){
   gesture.addStroke(stroke);
   gestures.push(gesture);
  }
- function beginStroke(touch, ctx){
+ function beginStroke(touch, cam){
   var index = touch.identifier;
   if(index in strokes) strokes[index].end();
-  var stroke = new Stroke(index, touch, ctx);
+  var stroke = new Stroke(index, touch, cam);
   strokes[index] = stroke;
   if(!activeGesture) beginGesture(stroke);
   else activeGesture.addStroke(stroke);
   return stroke;
  }
- function endStroke(touch, ctx){
+ function endStroke(touch, cam){
   var stroke = strokes[touch.identifier];
-  stroke.moveTo(touch, ctx);
+  stroke.moveTo(touch, cam);
   stroke.end();
   if(activeGesture.isDone()){
-   activeGesture.end(ctx);
+   activeGesture.end(cam);
    activeGesture = null;
   }
   return stroke;
  }
  return Promise.resolve(canv.getContext("2d")).then(
   function(ctx){
+   var camera = new Place(0, 0, 1, ctx);
    function animate(){
     if(!dirty)
      return promiseNextFrame().then(animate);
@@ -254,7 +316,7 @@ function promiseInitCanvas(canv){
      consumeTouchEvent(touchEvent);
      return [].slice.call(touchEvent.changedTouches).map(
       function(touch){
-       return processTouch(touch, ctx);
+       return processTouch(touch, camera);
       }
      );
     };
@@ -264,7 +326,7 @@ function promiseInitCanvas(canv){
     return [].slice.call(touchEvent.touches).map(
      function(touch){
       var stroke = strokes[touch.identifier];
-      stroke.moveTo(touch, ctx);
+      stroke.moveTo(touch, camera);
       return stroke;
      }
     );

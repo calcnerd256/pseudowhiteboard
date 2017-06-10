@@ -1,32 +1,27 @@
-function Stroke(index, firstTouch, ctx, strokeStyle){
+function Stroke(index, firstTouch, camera, strokeStyle){
  this.index = index;
  this.points = [];
+ this.camera = camera;
  if(arguments.length >= 4)
   this.strokeStyle = strokeStyle;
- this.addPoint(firstTouch, ctx);
+ this.moveTo(firstTouch, camera);
 }
 
 Stroke.prototype.strokeStyle = "#000000";
 
-Stroke.prototype.addPoint = function addPoint(touch, ctx){
- this.x = touch.clientX;
- this.y = touch.clientY;
- this.ctx = ctx;
- this.points.push(
-  Stroke.Point.fromTouch(touch, ctx)
- );
-}
-
-Stroke.Point = function Point(x, y, t, r){
- this.x = x;
- this.y = y;
- this.t = t;
- this.r = r;
-};
-Stroke.Point.fromTouch = function fromTouch(touch, ctx){
- var x = touch.clientX;
- var y = touch.clientY;
- var t = new Date();
- var r = Math.max(touch.radiusX, touch.radiusY);
- return new this(x, y, t, r);
+Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
+ this.camera = cam;
+ this.ctx = cam.ctx;
+ var p = cam.touchToPoint(nextTouch);
+ this.x = p.x;
+ this.y = p.y;
+ this.points.push(p);
+ if("previousTouch" in this)
+  cam.drawSegment(
+   this.previousTouch,
+   p,
+   "#8080ff",
+   2
+  );
+ this.previousTouch = p;
 };
