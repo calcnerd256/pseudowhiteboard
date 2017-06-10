@@ -1,15 +1,4 @@
-function getBrowserViewport(){
- // thanks https://github.com/ryanve/verge/blob/master/src/verge.js
- var win = null;
- var doc = null;
- var x = 0;
- var y = 0;
- if(typeof window != "undefined") win = window;
- if(typeof document != "undefined") doc = document.documentElement;
- x = Math.max(doc["clientWidth"], win["innerWidth"]);
- y = Math.max(doc["clientHeight"], win["innerHeight"]);
- return {w: x, h: y};
-}
+function I(x){return x;}
 function drawSegment(ctx, p, q, style){
  if(arguments.length >= 4)
   ctx.strokeStyle = style;
@@ -23,7 +12,6 @@ function drawSegment(ctx, p, q, style){
  ctx.lineTo(q.x, q.y);
  ctx.stroke();
 }
-function I(x){return x;}
 function promiseDrawRoom(ctx){
  function isStroke(line){
   var prefix = "stroke ";
@@ -52,27 +40,6 @@ function promiseDrawRoom(ctx){
  );
 }
 
-function Stroke(index, firstTouch, ctx, strokeStyle){
- this.index = index;
- this.points = [];
- if(arguments.length >= 4)
-  this.strokeStyle = strokeStyle;
- this.addPoint(firstTouch, ctx);
-}
-
-Stroke.Point = function Point(x, y, t, r){
- this.x = x;
- this.y = y;
- this.t = t;
- this.r = r;
-};
-Stroke.Point.fromTouch = function fromTouch(touch, ctx){
- var x = touch.clientX;
- var y = touch.clientY;
- var t = new Date();
- var r = Math.max(touch.radiusX, touch.radiusY);
- return new this(x, y, t, r);
-};
 Stroke.Point.fromChatStroke = function fromChatStroke(token){
  var pm = token.split(";").map(
   function(s){return s.split(",");}
@@ -104,15 +71,6 @@ Stroke.Point.prototype.toChatStroke = function toChatStroke(){
  ).join(";");
 }
 
-Stroke.prototype.strokeStyle = "#000000";
-Stroke.prototype.addPoint = function addPoint(touch, ctx){
- this.x = touch.clientX;
- this.y = touch.clientY;
- this.ctx = ctx;
- this.points.push(
-  Stroke.Point.fromTouch(touch, ctx)
- );
-}
 Stroke.prototype.done = false;
 Stroke.prototype.send = function send(){
  if("msgid" in this) return Promise.resolve(this.msgid);
@@ -180,6 +138,7 @@ Stroke.prototype.draw = function(){
  );
 };
 
+
 function Gesture(){
  this.strokes = [];
 }
@@ -215,6 +174,18 @@ function promiseNextFrame(){
  );
 }
 
+function getBrowserViewport(){
+ // thanks https://github.com/ryanve/verge/blob/master/src/verge.js
+ var win = null;
+ var doc = null;
+ var x = 0;
+ var y = 0;
+ if(typeof window != "undefined") win = window;
+ if(typeof document != "undefined") doc = document.documentElement;
+ x = Math.max(doc["clientWidth"], win["innerWidth"]);
+ y = Math.max(doc["clientHeight"], win["innerHeight"]);
+ return {w: x, h: y};
+}
 function promiseInitCanvas(canv){
  var strokes = {};
  var dirty = true;
