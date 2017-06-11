@@ -84,16 +84,16 @@ function promiseDrawRoom(cam){
    return allKeptPromises(
     lines.map(
      function(line){
-      return Stroke.promiseFromChat(line, lines);
+      return Gesture.promiseFromChat(line, lines);
      }
     )
    )
   }
  ).then(
-  function(strokes){
-   return strokes.filter(I).map(
-    function(stroke){
-     return stroke.draw(cam);
+  function(gestures){
+   return gestures.filter(I).map(
+    function(gesture){
+     return gesture.draw(cam);
     }
    );
   }
@@ -119,7 +119,7 @@ Gesture.promiseFromChat = function promiseFromChat(line, room){
  var body = line[1];
  var tokens = body.split(" ").filter(I);
  var assertion = {
-  expected: "(stroke",
+  expected: "(gesture",
   found: tokens.shift()
  };
  if(assertion.expected != assertion.found)
@@ -128,10 +128,12 @@ Gesture.promiseFromChat = function promiseFromChat(line, room){
  return Promise.all(
   tokens.map(
    function(token){
-    var msgid = +(token.split(")")[0]);
-    return Promise.resolve(room).then(
-     function(lines){
-      return Stroke.promiseFromChat(lines[msgid], lines);
+    return promiseDerefChat(
+     token.split(")")[0],
+     room
+    ).then(
+     function(line){
+      return Stroke.promiseFromChat(line, room);
      }
     );
    }
@@ -162,21 +164,31 @@ Gesture.prototype.toPromiseChat = function toPromiseChat(){
     [
      "gesture"
     ],
-    stids
+    stids.map(
+     function(strokeId){
+      return "@" + (+strokeId);
+     }
+    )
    );
    return "(" + tokens.join(" ") + ")";
   }
  );
 };
 Gesture.prototype.send = Stroke.prototype.send;
-
 Gesture.prototype.end = function end(cam){
  return this.send().then(
   function(msgid){
    return promiseDrawRoom(cam);
   }
  );
-}
+};
+Gesture.prototype.draw = function draw(cam){
+ return this.strokes.map(
+  function(stroke){
+   return stroke.draw(cam);
+  }
+ );
+};
 
 function promiseNextFrame(){
  return new Promise(
@@ -240,13 +252,9 @@ function promiseInitCanvas(canv){
      [],
      gestures.map(
       function(gesture){
-       return gesture.strokes;
+       return gesture.draw(camera);
       }
      )
-    ).map(
-     function(stroke, i){
-      stroke.draw(camera);
-     }
     );
     dirty = false;
     var f = Promise.resolve();
