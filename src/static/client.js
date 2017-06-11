@@ -26,5 +26,15 @@ function hello(){
     }
    )
   }
+ ).then(
+  function(usrid){
+   return promiseSendMessage(
+    "The time is: " + (+(new Date() - new Date(0)))
+   ).then(
+    function(){
+     return +usrid;
+    }
+   );
+  }
  );
 }
