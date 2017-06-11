@@ -113,15 +113,66 @@ Gesture.prototype.isDone = function isDone(){
   }
  );
 };
-Gesture.prototype.end = function end(cam){
+Gesture.promiseFromChat = function promiseFromChat(line, room){
+ if(arguments.length < 2) room = promiseReadChatroom();
+ var author = line[0];
+ var body = line[1];
+ var tokens = body.split(" ").filter(I);
+ var assertion = {
+  expected: "(stroke",
+  found: tokens.shift()
+ };
+ if(assertion.expected != assertion.found)
+  return Promise.reject(assertion);
+ var result = new this();
+ return Promise.all(
+  tokens.map(
+   function(token){
+    var msgid = +(token.split(")")[0]);
+    return Promise.resolve(room).then(
+     function(lines){
+      return Stroke.promiseFromChat(lines[msgid], lines);
+     }
+    );
+   }
+  )
+ ).then(
+  function(xs){
+   return xs.filter(I);
+  }
+ ).then(
+  function(strokes){
+   result.strokes = strokes;
+   return result;
+  }
+ );
+};
+Gesture.prototype.toPromiseChat = function toPromiseChat(){
  return Promise.all(
   this.strokes.map(
    function(stroke){
+    if("msgid" in stroke)
+     return Promise.resolve(stroke.msgid);
     return stroke.send();
    }
   )
  ).then(
-  function(msgids){
+  function(stids){
+   var tokens = [].concat(
+    [
+     "gesture"
+    ],
+    stids
+   );
+   return "(" + tokens.join(" ") + ")";
+  }
+ );
+};
+Gesture.prototype.send = Stroke.prototype.send;
+
+Gesture.prototype.end = function end(cam){
+ return this.send().then(
+  function(msgid){
    return promiseDrawRoom(cam);
   }
  );
