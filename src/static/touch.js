@@ -32,7 +32,7 @@ Stroke.Point.fromChatStroke = function fromChatStroke(token){
   new Date(+t),
   +r
  );
-}
+};
 Stroke.Point.prototype.toChatStroke = function toChatStroke(){
  return [
   [this.x, this.y],
@@ -45,19 +45,37 @@ Stroke.Point.prototype.toChatStroke = function toChatStroke(){
    return halves.join(",");
   }
  ).join(";");
-}
+};
 
-Stroke.prototype.send = function send(){
- if("msgid" in this) return Promise.resolve(this.msgid);
- this.msgid = "pending";
+function I(x){return x;}
+Stroke.Point.fromChat = function fromChat(line){
+ var author = line[0];
+ var body = line[1];
+ var prefix = "(point ";
+ if(prefix != body.substring(0, prefix.length)) return;
+ var tokens = body.split(" ").filter(I);
+ var x = tokens[1];
+ var y = tokens[2];
+ var r = tokens[3];
+ var t = tokens[4].split(")")[0];
+ return new Stroke.Point(+x, +y, new Date(+t), +r);
+};
+Stroke.Point.prototype.toChat = function toChat(){
+ return "(" + [
+  "point",
+  +(this.x),
+  +(this.y),
+  +(this.r),
+  +(this.t - new Date(0))
+ ].join(" ") + ")";
+};
+Stroke.Point.prototype.send = function(){
+ if("msgid" in this)
+  return Promise.resolve(this.msgid);
  var that = this;
- var msg = "stroke " +
-  this.points.map(
-   function(p){
-    return p.toChatStroke();
-   }
-  ).join(" ");
- return promiseSendMessage(msg).then(
+ this.msgid = promiseSendMessage(
+  this.toChat()
+ ).then(
   function(msgid){
    if(!msgid)
     delete that.msgid;
@@ -68,7 +86,32 @@ Stroke.prototype.send = function send(){
    return Promise.reject(that);
   }
  );
-}
+ return this.msgid;
+};
+
+Stroke.fromChat = function fromChat(line){
+ var author = line[0];
+ var body = line[1];
+ var tokens = body.split(" ");
+ if("stroke" != tokens.shift()) return null;
+ var result = new this();
+ result.points = tokens.map(
+  function(token){
+   return Stroke.Point.fromChatStroke(token);
+  }
+ ).filter(I);
+ result.done = true;
+ return result;
+};
+Stroke.prototype.toChat = function toChat(){
+ return "stroke " + this.points.map(
+  function(p){
+   return p.toChatStroke();
+  }
+ ).join(" ");
+};
+Stroke.prototype.send = Stroke.Point.prototype.send;
+
 Stroke.prototype.end = function end(){
  this.done = true;
  var that = this;
@@ -157,29 +200,14 @@ Place.prototype.toString = function toString(){
  return "<" + [this.x, this.y].join(", ") + ">*" + this.scale;
 }
 
-function I(x){return x;}
 function promiseDrawRoom(cam){
- function isStroke(line){
-  var prefix = "stroke ";
-  return prefix = line[1].substring(0, prefix.length);
- }
  return promiseReadChatroom().then(
   function(lines){
-   return lines.filter(isStroke).map(
+   return lines.map(
+    Stroke.fromChat.bind(Stroke)
+   ).filter(I).map(
     function(stroke){
-     var tokens = stroke[1].split(" ");
-     if("stroke" != tokens.shift()) return [];
-     var points = tokens.map(
-      function(token){
-       return Stroke.Point.fromChatStroke(token);
-      }
-     ).filter(I);
-     points.map(
-      function(x, i, a){
-       return cam.drawSegment(a[i?i-1:i], x, "#808080");
-      }
-     );
-     return points;
+     return stroke.draw(cam);
     }
    );
   }

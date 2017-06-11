@@ -1,7 +1,9 @@
 function Stroke(index, camera, strokeStyle){
- this.index = index;
  this.points = [];
- this.camera = camera;
+ if(arguments.length >= 1)
+  this.index = index;
+ if(arguments.length >= 2)
+  this.camera = camera;
  if(arguments.length >= 3)
   this.strokeStyle = strokeStyle;
 }
