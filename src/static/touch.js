@@ -16,37 +16,6 @@ Stroke.Point.prototype.toString = function(){
  return "<" + [this.x, this.y].join(", ") + ">(" + this.r + ")@" + this.t;
 };
 
-Stroke.Point.fromChatStroke = function fromChatStroke(token){
- var pm = token.split(";").map(
-  function(s){return s.split(",");}
- );
- if(1 == pm.length) return null;
- var xy = pm[0];
- var tr = pm[1];
- var t = tr[0];
- var r = 0;
- if(tr.length > 1) r = tr[1];
- return new this(
-  +(xy[0]),
-  +(xy[1]),
-  new Date(+t),
-  +r
- );
-};
-Stroke.Point.prototype.toChatStroke = function toChatStroke(){
- return [
-  [this.x, this.y],
-  [
-   this.t - new Date(0),
-   this.r
-  ]
- ].map(
-  function(halves){
-   return halves.join(",");
-  }
- ).join(";");
-};
-
 function I(x){return x;}
 Stroke.Point.fromChat = function fromChat(line){
  var author = line[0];
@@ -60,21 +29,24 @@ Stroke.Point.fromChat = function fromChat(line){
  var t = tokens[4].split(")")[0];
  return new Stroke.Point(+x, +y, new Date(+t), +r);
 };
-Stroke.Point.prototype.toChat = function toChat(){
- return "(" + [
+Stroke.Point.prototype.toPromiseChat = function toPromiseChat(){
+ var tokens = [
   "point",
   +(this.x),
   +(this.y),
   +(this.r),
   +(this.t - new Date(0))
- ].join(" ") + ")";
+ ];
+ return Promise.resolve(
+  "(" + tokens.join(" ") + ")"
+ );
 };
 Stroke.Point.prototype.send = function(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
  var that = this;
- this.msgid = promiseSendMessage(
-  this.toChat()
+ this.msgid = this.toPromiseChat().then(
+  promiseSendMessage
  ).then(
   function(msgid){
    if(!msgid)
@@ -89,26 +61,61 @@ Stroke.Point.prototype.send = function(){
  return this.msgid;
 };
 
-Stroke.fromChat = function fromChat(line){
+Stroke.promiseFromChat = function promiseFromChat(line, room){
+ if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
  var body = line[1];
- var tokens = body.split(" ");
- if("stroke" != tokens.shift()) return null;
+ var tokens = body.split(" ").filter(I);
+ var assertion = {
+  expected: "(stroke",
+  found: tokens.shift()
+ };
+ if(assertion.expected != assertion.found)
+  return Promise.reject(assertion);
  var result = new this();
- result.points = tokens.map(
-  function(token){
-   return Stroke.Point.fromChatStroke(token);
+ return Promise.all(
+  tokens.map(
+   function(token){
+    var msgid = +(token.split(")")[0]);
+    return Promise.resolve(room).then(
+     function(lines){
+      return Stroke.Point.fromChat(lines[msgid]);
+     }
+    );
+   }
+  )
+ ).then(
+  function(xs){
+   return xs.filter(I);
   }
- ).filter(I);
- result.done = true;
- return result;
+ ).then(
+  function(points){
+   result.points = points;
+   result.done = true;
+   return result;
+  }
+ );
 };
-Stroke.prototype.toChat = function toChat(){
- return "stroke " + this.points.map(
-  function(p){
-   return p.toChatStroke();
+Stroke.prototype.toPromiseChat = function toPromiseChat(){
+ return Promise.all(
+  this.points.map(
+   function(point){
+    if("msgid" in point)
+     return Promise.resolve(point.msgid);
+    return point.send();
+   }
+  )
+ ).then(
+  function(ptids){
+   var tokens = [].concat(
+    [
+     "stroke"
+    ],
+    ptids
+   );
+   return "(" + tokens.join(" ") + ")";
   }
- ).join(" ");
+ );
 };
 Stroke.prototype.send = Stroke.Point.prototype.send;
 
@@ -200,12 +207,46 @@ Place.prototype.toString = function toString(){
  return "<" + [this.x, this.y].join(", ") + ">*" + this.scale;
 }
 
+function K(x){
+ return function konstant(){
+  return x;
+ };
+}
+function allKeptPromises(proms){
+ return Promise.all(
+  proms.map(
+   Promise.resolve.bind(Promise)
+  ).map(
+   function(p){
+    return p.then(
+     function(x){return [x];},
+     K(false)
+    );
+   }
+  )
+ ).then(
+  function(xs){
+   return xs.filter(I).map(
+    function(x){return x[0];}
+   );
+  }
+ );
+}
+
 function promiseDrawRoom(cam){
  return promiseReadChatroom().then(
   function(lines){
-   return lines.map(
-    Stroke.fromChat.bind(Stroke)
-   ).filter(I).map(
+   return allKeptPromises(
+    lines.map(
+     function(line){
+      return Stroke.promiseFromChat(line, lines);
+     }
+    )
+   )
+  }
+ ).then(
+  function(strokes){
+   return strokes.filter(I).map(
     function(stroke){
      return stroke.draw(cam);
     }
