@@ -97,6 +97,18 @@ Stroke.Point.prototype.send = function(){
  return this.msgid;
 };
 
+function promiseDerefChat(ref, room){
+ if(arguments.length < 2) room = promiseReadChatroom();
+ if("@" != (""+ref).charAt(0))
+  return Promise.reject(["not a reference", ref]);
+ ref = ref.split("@")[1].split(")")[0];
+ return Promise.resolve(room).then(
+  function(lines){
+   return lines[+ref];
+  }
+ );
+}
+
 Stroke.promiseFromChat = function promiseFromChat(line, room){
  if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
@@ -112,10 +124,12 @@ Stroke.promiseFromChat = function promiseFromChat(line, room){
  return Promise.all(
   tokens.map(
    function(token){
-    var msgid = +(token.split(")")[0]);
-    return Promise.resolve(room).then(
-     function(lines){
-      return Stroke.Point.fromChat(lines[msgid]);
+    return promiseDerefChat(
+     token.split(")")[0],
+     room
+    ).then(
+     function(line){
+      return Stroke.Point.fromChat(line);
      }
     );
    }
@@ -147,7 +161,11 @@ Stroke.prototype.toPromiseChat = function toPromiseChat(){
     [
      "stroke"
     ],
-    ptids
+    ptids.map(
+     function(ptid){
+      return "@" + (+ptid);
+     }
+    )
    );
    return "(" + tokens.join(" ") + ")";
   }
