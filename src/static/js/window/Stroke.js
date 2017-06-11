@@ -1,10 +1,9 @@
-function Stroke(index, firstTouch, camera, strokeStyle){
+function Stroke(index, camera, strokeStyle){
  this.index = index;
  this.points = [];
  this.camera = camera;
- if(arguments.length >= 4)
+ if(arguments.length >= 3)
   this.strokeStyle = strokeStyle;
- this.moveTo(firstTouch, camera);
 }
 
 Stroke.prototype.strokeStyle = "#000000";
@@ -25,3 +24,9 @@ Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
   );
  this.previousTouch = p;
 };
+
+Stroke.prototype.toString = function(){
+ return "stroke " + this.index;
+};
+
+Stroke.prototype.done = false;

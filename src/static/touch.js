@@ -12,9 +12,6 @@ Stroke.Point.fromTouch = function fromTouch(touch, ctx){
  return new this(x, y, t, r);
 };
 
-Stroke.prototype.toString = function(){
- return "stroke " + this.index;
-};
 Stroke.Point.prototype.toString = function(){
  return "<" + [this.x, this.y].join(", ") + ">(" + this.r + ")@" + this.t;
 };
@@ -50,22 +47,6 @@ Stroke.Point.prototype.toChatStroke = function toChatStroke(){
  ).join(";");
 }
 
-function drawSegment(ctx, p, q, style){
- if(arguments.length >= 4)
-  ctx.strokeStyle = style;
- var w = Math.min(p.r, q.r);
- if(w < 0) w = 0;
- w += .125;
- ctx.lineWidth = w * 10;
- ctx.lineCap = "round";
- ctx.beginPath();
- ctx.moveTo(p.x, p.y);
- ctx.lineTo(q.x, q.y);
- ctx.stroke();
-}
-
-
-Stroke.prototype.done = false;
 Stroke.prototype.send = function send(){
  if("msgid" in this) return Promise.resolve(this.msgid);
  this.msgid = "pending";
@@ -93,7 +74,7 @@ Stroke.prototype.end = function end(){
  var that = this;
  return this.send();
 };
-Stroke.prototype.draw = function(){
+Stroke.prototype.draw = function(camera){
  var that = this;
  var colors = [
   "#ff0000",
@@ -109,10 +90,15 @@ Stroke.prototype.draw = function(){
   "#ff00ff",
   "#ff0080"
  ];
+ var done = this.done;
+ var color = this.strokeStyle;
  return this.points.map(
   function(x, i, a){
-   var color = that.done ? that.strokeStyle : colors[i % colors.length];
-   return that.camera.drawSegment(a[i?i-1:i],x,color);
+   return camera.drawSegment(
+    a[i?i-1:i],
+    x,
+    done ? color : colors[i % colors.length]
+   );
   }
  );
 };
@@ -261,7 +247,8 @@ function promiseInitCanvas(canv){
  function beginStroke(touch, cam){
   var index = touch.identifier;
   if(index in strokes) strokes[index].end();
-  var stroke = new Stroke(index, touch, cam);
+  var stroke = new Stroke(index, cam);
+  stroke.moveTo(touch, cam);
   strokes[index] = stroke;
   if(!activeGesture) beginGesture(stroke);
   else activeGesture.addStroke(stroke);
@@ -293,7 +280,7 @@ function promiseInitCanvas(canv){
      )
     ).map(
      function(stroke, i){
-      stroke.draw();
+      stroke.draw(camera);
      }
     );
     dirty = false;
