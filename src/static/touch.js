@@ -78,7 +78,7 @@ function allKeptPromises(proms){
  );
 }
 
-function promiseDrawRoom(cam){
+function promiseDrawRoom(cam, clearFirst){
  return promiseReadChatroom().then(
   function(lines){
    return allKeptPromises(
@@ -91,6 +91,13 @@ function promiseDrawRoom(cam){
   }
  ).then(
   function(gestures){
+   if(clearFirst)
+    cam.ctx.clearRect(
+     0,
+     0,
+     cam.ctx.canvas.width,
+     cam.ctx.canvas.height
+    );
    return gestures.filter(I).filter(
     function(gesture){
      return 1 == gesture.strokes.length;
@@ -140,32 +147,7 @@ ZoomPan.prototype.transformators = function(){
  if(!ra) ra = rb;
  return [dx, dy, Math.sqrt(rb / ra)];
 };
-ZoomPan.prototype.draw = function draw(cam){
- var transformers = this.transformators();
- if(3 != transformers.length) return;
- var dx = transformers[0];
- var dy = transformers[1];
- var rho = transformers[2];
- var x = cam.x + dx;
- var y = cam.y + dy;
- var s = cam.scale * rho / 4;
- var l = x - s;
- var r = x + s;
- var t = y + s;
- var b = y - s;
- var g = "#008000";
- var d = new Date();
- var bl = new Stroke.Point(l, b, d, s / 10);
- var tl = new Stroke.Point(l, t, d, s / 10);
- var br = new Stroke.Point(r, b, d, s / 10);
- var tr = new Stroke.Point(r, t, d, s / 10);
- return [bl, br, tr, tl].map(
-  function(p, i, a){
-   var q = a[(i+1) % a.length];
-   return cam.drawSegment(p, q, g);
-  }
- );
-};
+ZoomPan.prototype.draw = function draw(cam){};
 ZoomPan.prototype.transform = function(camera){
  var transformers = this.transformators();
  if(3 != transformers.length) return camera;
@@ -260,7 +242,7 @@ Gesture.prototype.end = function end(cam){
  if(2 == this.strokes.length){
   var zp = new ZoomPan(this.strokes[0], this.strokes[1]);
   var c = zp.transform(cam);
-  return promiseDrawRoom(c).then(K(c));
+  return promiseDrawRoom(c, true).then(K(c));
   return c;
  }
  return this.send().then(
@@ -270,15 +252,12 @@ Gesture.prototype.end = function end(cam){
  ).then(K(cam));
 };
 Gesture.prototype.draw = function draw(cam){
- if(!this.isDone()){
-  if(2 == this.strokes.length)
-   (new ZoomPan(this.strokes[0], this.strokes[1])).draw(cam);
+ if(!this.isDone())
   return this.strokes.map(
    function(stroke){
     return stroke.draw(cam);
    }
   );
- }
  if(1 == this.strokes.length)
   return [this.strokes[0].draw(cam)];
  if(2 < this.strokes.length) // TODO: remove this case
@@ -347,11 +326,17 @@ function promiseInitCanvas(canv){
     if(!dirty)
      return promiseNextFrame().then(animate);
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    var cam = camera;
+    if(activeGesture)
+     if(2 == activeGesture.strokes.length)
+      cam = (
+       new ZoomPan(activeGesture.strokes[0], activeGesture.strokes[1])
+      ).transform(camera);
     [].concat.apply(
      [],
      gestures.map(
       function(gesture){
-       return gesture.draw(camera);
+       return gesture.draw(cam);
       }
      )
     );
