@@ -30,6 +30,10 @@ var staticFiles = {
  "/js/window/Stroke.js": [
   "application/javascript; charset=utf-8",
    "./static/js/window/Stroke.js"
+ ],
+ "/js/window/ChatDb.js": [
+  "application/javascript; charset=utf-8",
+   "./static/js/window/ChatDb.js"
  ]
 };
 
