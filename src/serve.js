@@ -140,6 +140,7 @@ function respondChatopsdbPOST(q, s, db){
  var addr = q.socket.remoteAddress;
  var clients = db.clients;
  var handle = null;
+ var now = new Date();
  if(addr in clients)
   handle = clients[addr];
  else{
@@ -153,7 +154,7 @@ function respondChatopsdbPOST(q, s, db){
     var body = formData.message.split("\n").map(
      function(line){
       var result = log.length;
-      log.push(handle + ": " + line);
+      log.push(handle + "@" + (+now) + ": " + line);
       return result;
      }
     ).join("\n");

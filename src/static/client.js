@@ -10,8 +10,11 @@ function promiseReadChatroom(){
    return db.split("\n").map(
     function(line){
      var pieces = line.split(": ");
-     var usrid = pieces.shift();
-     return [usrid, pieces.join(": ")];
+     var whowhen = pieces.shift();
+     var body = pieces.join(": ");
+     var usrid = whowhen.split("@")[0];
+     var timestamp = whowhen.split("@")[1]
+     return [+usrid, body, +timestamp];
     }
    );
   }

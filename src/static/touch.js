@@ -53,11 +53,6 @@ Place.prototype.toString = function toString(){
  return "<" + [this.x, this.y].join(", ") + ">*" + this.scale;
 }
 
-function K(x){
- return function konstant(){
-  return x;
- };
-}
 function allKeptPromises(proms){
  return Promise.all(
   proms.map(
@@ -244,7 +239,6 @@ Gesture.prototype.end = function end(cam){
   var zp = new ZoomPan(this.strokes[0], this.strokes[1]);
   var c = zp.transform(cam);
   return promiseDrawRoom(c, true).then(K(c));
-  return c;
  }
  return this.send().then(
   function(msgid){
