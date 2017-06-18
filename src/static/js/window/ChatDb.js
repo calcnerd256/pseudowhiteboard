@@ -1,3 +1,11 @@
+function K(x){
+ function konstant(){
+  return x;
+ };
+ konstant.x = x;
+ return konstant;
+}
+
 function Stream(emitterCatcher){
  /*
   // usage:
@@ -71,7 +79,7 @@ ChatDb.prototype.sync = function sync(){
  var that = this;
  return promiseReadChatroom().then(
   function(lines){
-   if(lines.length == that.lines.length) return;
+   if(lines.length == that.lines.length) return [];
    return lines.slice(that.lines.length).map(that.append.bind(that));
   }
  );
@@ -79,13 +87,15 @@ ChatDb.prototype.sync = function sync(){
 ChatDb.prototype.run = function run(timestep){
  return this.sync().then(
   function(updates){
+   if(!updates.length) timestep *= 1.1;
+   else timestep /= 2;
    return new Promise(
     function(res, rej){
      setTimeout(res, timestep);
     }
-   );
+   ).then(K(timestep));
   }
  ).then(
-  this.run.bind(this, timestep)
+  this.run.bind(this)
  );
 };
