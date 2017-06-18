@@ -1,3 +1,32 @@
+function ChatDb(){
+ this.lines = [];
+}
+ChatDb.prototype.append = function(line){
+ this.lines.push(line);
+}
+ChatDb.prototype.sync = function sync(){
+ var that = this;
+ return promiseReadChatroom().then(
+  function(lines){
+   if(lines.length == that.lines.length) return;
+   return lines.slice(that.lines.length).map(that.append.bind(that));
+  }
+ );
+}
+ChatDb.prototype.run = function run(timestep){
+ return this.sync().then(
+  function(updates){
+   return new Promise(
+    function(res, rej){
+     setTimeout(res, timestep);
+    }
+   );
+  }
+ ).then(
+  this.run.bind(this, timestep)
+ );
+}
+
 function Place(x, y, scale, ctx){
  this.x = x;
  this.y = y;
@@ -15,7 +44,8 @@ Place.prototype.touchToPoint = function touchToPoint(touch){
  var t = touch.clientY - (canvRect.top + canv.clientTop);
  var x = l - w / 2;
  var y = h / 2 - t;
- var r = Math.max(touch.radiusX, touch.radiusY, .125);
+ var r = Math.max(touch.radiusX, touch.radiusY, 1);
+ if(r > w) r = w;
  return new Stroke.Point(
   this.x + x * this.scale / s,
   this.y + y * this.scale / s,
@@ -31,9 +61,8 @@ Place.prototype.drawSegment = function drawSegment(p, q, style, r){
  var h = this.ctx.canvas.height;
  var s = w;
  if(h < s) s = h;
- r *= 10 / this.scale;
- if(r < 0) r = 0;
- if(r < .125) return;
+ r /= this.scale;
+ if(r < 2) r = 2;
  this.ctx.lineWidth = r;
  this.ctx.lineCap = "round";
  this.ctx.beginPath();
@@ -43,6 +72,7 @@ Place.prototype.drawSegment = function drawSegment(p, q, style, r){
  }
  this.ctx.moveTo(f(p.x, this.x, w), h - f(p.y, this.y, h));
  this.ctx.lineTo(f(q.x, this.x, w), h - f(q.y, this.y, h));
+ this.ctx.globalAlpha = 1;
  if(r > 1)
   this.ctx.globalAlpha = 1/r;
  this.ctx.stroke();
@@ -286,13 +316,19 @@ function getBrowserViewport(){
  if(typeof document != "undefined") doc = document.documentElement;
  x = Math.max(doc["clientWidth"], win["innerWidth"]);
  y = Math.max(doc["clientHeight"], win["innerHeight"]);
- return {w: x, h: y};
+ return {
+  w: x,
+  h: y,
+  vw: window.innerWidth,
+  vh: window.innerHeight
+ };
 }
 function promiseInitCanvas(canv){
  var strokes = {};
  var dirty = true;
  var activeGesture = null;
  var gestures = [];
+ var chatRoom = new ChatDb();
  function beginGesture(stroke){
   var gesture = new Gesture();
   gestures.push(gesture);
@@ -322,33 +358,50 @@ function promiseInitCanvas(canv){
  return Promise.resolve(canv.getContext("2d")).then(
   function(ctx){
    var camera = new Place(0, 0, 1, ctx);
-   function animate(){
-    if(!dirty)
-     return promiseNextFrame().then(animate);
+   function getActiveCamera(){
+    if(!activeGesture) return camera;
+    var strokes = activeGesture.strokes;
+    if(2 != strokes.length) return camera;
+    var zp = new ZoomPan(strokes[0], strokes[1]);
+    return zp.transform(camera);
+   }
+   function drawGestures(){
     ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    var cam = camera;
-    if(activeGesture)
-     if(2 == activeGesture.strokes.length)
-      cam = (
-       new ZoomPan(activeGesture.strokes[0], activeGesture.strokes[1])
-      ).transform(camera);
-    [].concat.apply(
+    var cam = getActiveCamera();
+    return [].concat.apply(
      [],
-     gestures.map(
+     gestures.filter(
+      function(gesture){
+return true; // TODO: remove
+       return !("msgid" in gesture);
+      }
+     ).concat(
+      [] // TODO: get strokes from room cache
+     ).map(
       function(gesture){
        return gesture.draw(cam);
       }
      )
     );
+   }
+   function sizeCanvas(){
+    var vp = getBrowserViewport();
+    canv.width = vp.vw - 16;
+    canv.height = vp.vh - 16 - 32;
+    return vp;
+   }
+   function animate(){
+    if(!dirty)
+     return promiseNextFrame().then(animate);
+    sizeCanvas();
+    drawGestures();
     dirty = false;
     var f = Promise.resolve();
     for(var i = 0; i < 4; i++)
      f = f.then(promiseNextFrame);
     return f.then(animate);
    }
-   var vp = getBrowserViewport();
-   canv.width = vp.w - 16;
-   canv.height = vp.h - 16;
+   sizeCanvas();
 
    function consumeTouchEvent(evt){
     evt.preventDefault();
@@ -386,6 +439,7 @@ function promiseInitCanvas(canv){
    canv.addEventListener("touchmove", go);
    canv.addEventListener("touchend", makeStartStop(endStroke));
 
+   chatRoom.run(1000);
    animate();
    return ctx;
   }
