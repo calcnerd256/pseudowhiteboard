@@ -59,7 +59,7 @@ Stroke.Point.prototype.toString = function(){
 
 
 Stroke.Point.promiseFromLispPromise = function promiseFromLispPromise(sp){
- return sp.then(
+ return Promise.resolve(sp).then(
   function(expr){
    return lispCar(expr).then(
     function(oper){
@@ -70,7 +70,7 @@ Stroke.Point.promiseFromLispPromise = function promiseFromLispPromise(sp){
     }
    ).then(
     function(xyrt){
-     var assurtion = new AssertEqual(4, xyrt.length);
+     var assertion = new AssertEqual(4, xyrt.length);
      if(!assertion.satisfiedp())
       return Promise.reject(assertion);
      var x = xyrt[0];
@@ -125,6 +125,46 @@ Stroke.Point.prototype.send = function promiseSend(){
  );
  return this.msgid;
 };
+Stroke.Point.chatMiddleware = [
+ function(nabtl){
+  var hasLisp = nabtl.filter(
+   function(it){
+    return "object" == typeof it;
+   }
+  ).filter(
+   function(it){
+    return "lisp" in it;
+   }
+  );
+  return hasLisp.length;
+ },
+ function(nabtl){
+  var hasLisp = nabtl.filter(
+   function(it){
+    return "object" == typeof it;
+   }
+  ).filter(
+   function(it){
+    return "lisp" in it;
+   }
+  );
+  return Promise.all(
+   hasLisp.map(
+    function(d){
+     return Stroke.Point.promiseFromLispPromise(d.lisp).then(
+      function(p){
+       d.point = p;
+       d.toString = function(){
+        return "" + this.point;
+       };
+       return d;
+      }
+     );
+    }
+   )
+  ).then(K(nabtl));
+ }
+];
 
 function promiseDerefChat(ref, room){
  if(arguments.length < 2) room = promiseReadChatroom();

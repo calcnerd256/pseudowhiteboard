@@ -147,16 +147,20 @@ var lispParseMiddleware = [
   var a = labt[1];
   var b = labt[2];
   var t = labt[3];
-  return [].concat.call(
-   labt,
-   [
-    {
-     lineNumber: l,
-     author: a,
-     body: b,
-     timestamp: t,
-     lisp: chatBodyToLisp(b),
-     toString: function(){
+  return Promise.resolve(
+   chatBodyToLisp(b)
+  ).then(
+   function(symbolicExpression){
+    return [].concat.call(
+     labt,
+     [
+      {
+       lineNumber: l,
+       author: a,
+       body: b,
+       timestamp: t,
+       lisp: symbolicExpression,
+       toString: function(){
       var tokens = this.lisp.map(
        function quote(token){
         return "\"" + (
@@ -166,9 +170,11 @@ var lispParseMiddleware = [
       );
       return "(" + tokens.join(" ") + ")";
      }
-    }
-   ]
-  )
+      }
+     ]
+    );
+   }
+  );
  }
 ];
 
