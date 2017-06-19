@@ -106,18 +106,6 @@ Stroke.Point.fromChat = function fromChat(line){
  var t = tokens[5].split(")")[0];
  return new Stroke.Point(+x, +y, new Date(+t), +r);
 };
-Stroke.Point.prototype.toPromiseChat = function toPromiseChat(){
- var tokens = [
-  "point",
-  +(this.x),
-  +(this.y),
-  +(this.r),
-  +(this.t - new Date(0))
- ];
- return Promise.resolve(
-  "/lisp (" + tokens.join(" ") + ")"
- );
-};
 Stroke.Point.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
