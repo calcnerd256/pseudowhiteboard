@@ -1,5 +1,3 @@
-function I(x){return x;}
-
 function Stroke(index, camera, strokeStyle){
  this.points = [];
  if(arguments.length >= 1)
@@ -30,7 +28,10 @@ Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
 };
 
 Stroke.prototype.toString = function(){
- return "stroke " + this.index;
+ if("msgid" in this)
+  if(("" + (+(this.msgid))) == ("" + (this.msgid)))
+   return "@" + (+this.msgid) + ":stroke";
+ return "(stroke " + this.points.join(" ") + ")";
 };
 
 Stroke.prototype.done = false;
@@ -50,19 +51,59 @@ Stroke.Point.fromTouch = function fromTouch(touch, ctx){
 };
 
 Stroke.Point.prototype.toString = function(){
+ if("msgid" in this)
+  if(("" + (+(this.msgid))) == ("" + (this.msgid)))
+   return "@" + (+this.msgid) + ":point";
  return "<" + [this.x, this.y].join(", ") + ">(" + this.r + ")@" + this.t;
 };
 
+
+Stroke.Point.promiseFromLispPromise = function promiseFromLispPromise(sp){
+ return sp.then(
+  function(expr){
+   return lispCar(expr).then(
+    function(oper){
+     var assertion = new AssertEqual("point", oper);
+     if(!assertion.satisfiedp())
+      return Promise.reject(assertion);
+     return arrayFromLispCdr(expr);
+    }
+   ).then(
+    function(xyrt){
+     var assurtion = new AssertEqual(4, xyrt.length);
+     if(!assertion.satisfiedp())
+      return Promise.reject(assertion);
+     var x = xyrt[0];
+     var y = xyrt[1];
+     var r = xyrt[2];
+     var t = xyrt[3];
+     return new Stroke.Point(+x, +y, new Date(+t), +r);
+    }
+   );
+  }
+ );
+};
+Stroke.Point.prototype.promiseToLisp = function promiseToLisp(){
+ return arrayToLispCons(
+  "point",
+  [
+   +(this.x),
+   +(this.y),
+   +(this.r),
+   +(this.t - new Date(0))
+  ]
+ );
+};
 Stroke.Point.fromChat = function fromChat(line){
  var author = line[0];
  var body = line[1];
- var prefix = "(point ";
+ var prefix = "/lisp (point ";
  if(prefix != body.substring(0, prefix.length)) return;
  var tokens = body.split(" ").filter(I);
- var x = tokens[1];
- var y = tokens[2];
- var r = tokens[3];
- var t = tokens[4].split(")")[0];
+ var x = tokens[2];
+ var y = tokens[3];
+ var r = tokens[4];
+ var t = tokens[5].split(")")[0];
  return new Stroke.Point(+x, +y, new Date(+t), +r);
 };
 Stroke.Point.prototype.toPromiseChat = function toPromiseChat(){
@@ -74,7 +115,7 @@ Stroke.Point.prototype.toPromiseChat = function toPromiseChat(){
   +(this.t - new Date(0))
  ];
  return Promise.resolve(
-  "(" + tokens.join(" ") + ")"
+  "/lisp (" + tokens.join(" ") + ")"
  );
 };
 Stroke.Point.prototype.send = function(){
