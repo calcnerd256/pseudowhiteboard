@@ -174,15 +174,21 @@ var lispParseMiddleware = [
 
 
 function lispCar(symbolicExpression){
- return Promise.resolve(
-  symbolicExpression[0] // assume arrays for now
+ return Promise.resolve(symbolicExpression).then(
+  function(expr){
+   return expr[0] // assume arrays for now
+  }
  );
 }
 function arrayFromLispCdr(symbolicExpression){
- return Promise.all(
-  symbolicExpression.slice(1).map( // assume arrays
-   Promise.resolve.bind(Promise)
-  )
+ return Promise.resolve(symbolicExpression).then(
+  function(expr){
+   return Promise.all(
+    expr.slice(1).map( // assume arrays
+     Promise.resolve.bind(Promise)
+    )
+   );
+  }
  );
 }
 function arrayToLispCons(head, tail){
@@ -193,11 +199,39 @@ function arrayToLispCons(head, tail){
   function(ardr){
    var ar = ardr[0];
    var dr = ardr[1];
-   return Promise.all(dr.map(Promise.resolve.bind(Promise))).then(
+   return Promise.all(
+    dr.map(Promise.resolve.bind(Promise))
+   ).then(
     function(args){
      return [ar].concat(args);
     }
    );
   }
  );
+}
+
+function promiseSendLisp(symbolicExpression){
+ // for now, only flat lists of strings are supported
+ return Promise.resolve(symbolicExpression).then(
+  function(promises){
+   return promises.map(Promise.resolve.bind(Promise));
+  }
+ ).then(
+  Promise.all.bind(Promise)
+ ).then(
+  function(expr){
+   return expr.map(
+    function(token){
+     if(1 == (""+token).split(" ").length)
+      return token;
+     // assume no quoted strings containing spaces, for now
+     return token;
+    }
+   ).join(" ");
+  }
+ ).then(
+  function(inner){
+   return "/lisp (" + inner + ")";
+  }
+ ).then(promiseSendMessage);
 }

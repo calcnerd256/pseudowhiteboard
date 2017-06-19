@@ -118,12 +118,12 @@ Stroke.Point.prototype.toPromiseChat = function toPromiseChat(){
   "/lisp (" + tokens.join(" ") + ")"
  );
 };
-Stroke.Point.prototype.send = function(){
+Stroke.Point.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
  var that = this;
- this.msgid = this.toPromiseChat().then(
-  promiseSendMessage
+ this.msgid = this.promiseToLisp().then(
+  promiseSendLisp
  ).then(
   function(msgid){
    if(!msgid)
@@ -212,7 +212,25 @@ Stroke.prototype.toPromiseChat = function toPromiseChat(){
   }
  );
 };
-Stroke.prototype.send = Stroke.Point.prototype.send;
+Stroke.prototype.send = function send(){
+ if("msgid" in this)
+  return Promise.resolve(this.msgid);
+ var that = this;
+ this.msgid = this.toPromiseChat().then(
+  promiseSendMessage
+ ).then(
+  function(msgid){
+   if(!msgid)
+    delete that.msgid;
+   else
+    that.msgid = +msgid;
+   if("msgid" in that)
+    return that.msgid;
+   return Promise.reject(that);
+  }
+ );
+ return this.msgid;
+};
 
 Stroke.prototype.end = function end(){
  this.done = true;
