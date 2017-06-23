@@ -36,6 +36,20 @@ Stroke.prototype.toString = function(){
 
 Stroke.prototype.done = false;
 
+function promiseDerefChat(ref, room){
+ if(arguments.length < 2) room = promiseReadChatroom();
+ if("@" != (""+ref).charAt(0))
+  return Promise.reject(["not a reference", ref]);
+ ref = ref.split("@")[1].split(")")[0];
+ return Promise.resolve(room).then(
+  function(lines){
+   if(lines instanceof ChatDb) lines = lines.getLegacyLines();
+   return lines[+ref];
+  }
+ );
+}
+
+
 Stroke.Point = function Point(x, y, t, r){
  this.x = x;
  this.y = y;
@@ -49,15 +63,12 @@ Stroke.Point.fromTouch = function fromTouch(touch, ctx){
  var r = Math.max(touch.radiusX, touch.radiusY);
  return new this(x, y, t, r);
 };
-
 Stroke.Point.prototype.toString = function(){
  if("msgid" in this)
   if(("" + (+(this.msgid))) == ("" + (this.msgid)))
    return "@" + (+this.msgid) + ":point";
  return "<" + [this.x, this.y].join(", ") + ">(" + this.r + ")@" + this.t;
 };
-
-
 Stroke.Point.promiseFromLispPromise = function promiseFromLispPromise(sp){
  return Promise.resolve(sp).then(
   function(expr){
@@ -165,42 +176,41 @@ Stroke.Point.chatMiddleware = [
   ).then(K(nabtl));
  }
 ];
-
-function promiseDerefChat(ref, room){
+Stroke.Point.promiseFromChatLineNumber = function promiseFromChatLineNumber(
+ lineNumber,
+ room
+){
  if(arguments.length < 2) room = promiseReadChatroom();
- if("@" != (""+ref).charAt(0))
-  return Promise.reject(["not a reference", ref]);
- ref = ref.split("@")[1].split(")")[0];
- return Promise.resolve(room).then(
-  function(lines){
-   return lines[+ref];
+ return Promise.all(
+  [lineNumber, room].map(Promise.resolve.bind(Promise))
+ ).then(
+  function(args){
+   return promiseDerefChat(args[0], args[1]);
+  }
+ ).then(
+  function(line){
+   return Stroke.Point.fromChat(line);
   }
  );
-}
+};
+
 
 Stroke.promiseFromChat = function promiseFromChat(line, room){
  if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
  var body = line[1];
  var tokens = body.split(" ").filter(I);
- var assertion = {
-  expected: "(stroke",
-  found: tokens.shift()
- };
- if(assertion.expected != assertion.found)
-  return Promise.reject(assertion);
+ var assertion = new AssertEqual("(stroke", tokens.shift());
+ if(!assertion.satisfiedp()) return Promise.reject(assertion);
  var result = new this();
  return Promise.all(
   tokens.map(
    function(token){
-    return promiseDerefChat(
-     token.split(")")[0],
-     room
-    ).then(
-     function(line){
-      return Stroke.Point.fromChat(line);
-     }
-    );
+    return token.split(")")[0];
+   }
+  ).map(
+   function(lineNumber){
+    return Stroke.Point.promiseFromChatLineNumber(lineNumber, room);
    }
   )
  ).then(

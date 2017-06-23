@@ -101,6 +101,13 @@ ChatDb.prototype.run = function run(timestep){
   this.run.bind(this)
  );
 };
+ChatDb.prototype.getLegacyLines = function getLegacyLines(){
+ return this.lines.map(
+  function(line){
+   return line.slice(1);
+  }
+ );
+};
 
 
 function AssertEqual(expected, found){
