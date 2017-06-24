@@ -126,6 +126,10 @@ AssertEqual.prototype.toString = function toString(){
 AssertEqual.prototype.satisfiedp = function satisfiedp(){
  return this.expected == this.found;
 };
+AssertEqual.prototype.resolve = function(value){
+ if(this.satisfiedp()) return Promise.resolve(value);
+ return Promise.reject(this);
+};
 
 function chatBodyIsLisp(body){
  // all symbolic expressions are lists, for now
