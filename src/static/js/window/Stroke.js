@@ -49,15 +49,14 @@ function promiseDerefChat(ref, room){
  );
 }
 
-Stroke.Point = StrokePoint; // TODO: obviate
-
-
 Stroke.promiseFromChat = function promiseFromChat(line, room){
  if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
  var body = line[1];
  var tokens = body.split(" ").filter(I);
- var assertion = new AssertEqual("(stroke", tokens.shift());
+ var assertion = new AssertEqual("/lisp", tokens.shift());
+ if(!assertion.satisfiedp()) return Promise.reject(assertion);
+ assertion = new AssertEqual("(stroke", tokens.shift());
  if(!assertion.satisfiedp()) return Promise.reject(assertion);
  var result = new this();
  return Promise.all(
@@ -67,7 +66,7 @@ Stroke.promiseFromChat = function promiseFromChat(line, room){
    }
   ).map(
    function(lineNumber){
-    return Stroke.Point.promiseFromChatLineNumber(lineNumber, room);
+    return StrokePoint.promiseFromChatLineNumber(lineNumber, room);
    }
   )
  ).then(
@@ -103,7 +102,7 @@ Stroke.prototype.toPromiseChat = function toPromiseChat(){
      }
     )
    );
-   return "(" + tokens.join(" ") + ")";
+   return "/lisp (" + tokens.join(" ") + ")";
   }
  );
 };
