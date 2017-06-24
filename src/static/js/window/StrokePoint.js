@@ -124,7 +124,7 @@ StrokePoint.hydrate = function hydrate(nabtl){
     );
    }
   )
- ).then(K(nabtl));
+ ).then(K(nabtl), K(nabtl));
 };
 StrokePoint.chatMiddleware = [
  StrokePoint.canHydrate,
