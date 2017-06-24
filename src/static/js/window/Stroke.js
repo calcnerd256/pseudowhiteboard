@@ -162,13 +162,15 @@ Stroke.Point.chatMiddleware = [
     }
    )
   ).then(K(nabtl));
- }
+ },
+ "point"
 ];
 Stroke.Point.promiseFromChatLineNumber = function promiseFromChatLineNumber(
  lineNumber,
  room
 ){
  if(arguments.length < 2) room = promiseReadChatroom();
+ var that = this;
  return Promise.all(
   [lineNumber, room].map(Promise.resolve.bind(Promise))
  ).then(
@@ -177,10 +179,26 @@ Stroke.Point.promiseFromChatLineNumber = function promiseFromChatLineNumber(
   }
  ).then(
   function(line){
-   return line[1];
+   var hasLisp = line.filter(
+    function(ob){
+     return "object" == typeof ob;
+    }
+   ).filter(
+    function(ob){
+     return "lisp" in ob;
+    }
+   );
+   var water = that.chatMiddleware[2];
+   var hydrated = hasLisp.filter(
+    function(d){
+     return water in d;
+    }
+   );
+   if(hydrated.length)
+    return hydrated[0][water];
+   var lisp = hasLisp.length ? hasLisp[0].lisp : chatBodyToLisp(line[1]);
+   return that.promiseFromLispPromise(lisp);
   }
- ).then(chatBodyToLisp).then(
-  this.promiseFromLispPromise.bind(this)
  );
 };
 
