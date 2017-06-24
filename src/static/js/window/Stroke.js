@@ -105,18 +105,6 @@ Stroke.Point.prototype.promiseToLisp = function promiseToLisp(){
   ]
  );
 };
-Stroke.Point.fromChat = function fromChat(line){
- var author = line[0];
- var body = line[1];
- var prefix = "/lisp (point ";
- if(prefix != body.substring(0, prefix.length)) return;
- var tokens = body.split(" ").filter(I);
- var x = tokens[2];
- var y = tokens[3];
- var r = tokens[4];
- var t = tokens[5].split(")")[0];
- return new Stroke.Point(+x, +y, new Date(+t), +r);
-};
 Stroke.Point.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
@@ -189,8 +177,10 @@ Stroke.Point.promiseFromChatLineNumber = function promiseFromChatLineNumber(
   }
  ).then(
   function(line){
-   return Stroke.Point.fromChat(line);
+   return line[1];
   }
+ ).then(chatBodyToLisp).then(
+  this.promiseFromLispPromise.bind(this)
  );
 };
 
