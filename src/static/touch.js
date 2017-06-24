@@ -1,58 +1,3 @@
-function Place(x, y, scale, ctx){
- this.x = x;
- this.y = y;
- this.scale = scale;
- this.ctx = ctx;
-}
-Place.prototype.touchToPoint = function touchToPoint(touch){
- var canv = this.ctx.canvas;
- var w = canv.width;
- var h = canv.height;
- var s = w;
- if(h < s) s = h;
- var canvRect = canv.getBoundingClientRect();
- var l = touch.clientX - (canvRect.left + canv.clientLeft);
- var t = touch.clientY - (canvRect.top + canv.clientTop);
- var x = l - w / 2;
- var y = h / 2 - t;
- var r = Math.max(touch.radiusX, touch.radiusY, 1);
- if(r > w) r = w;
- return new Stroke.Point(
-  this.x + x * this.scale / s,
-  this.y + y * this.scale / s,
-  new Date(),
-  r * this.scale
- );
-};
-Place.prototype.drawSegment = function drawSegment(p, q, style, r){
- if(arguments.length >= 3) this.ctx.strokeStyle = style;
- if(arguments.length < 4)
-  r = Math.min(p.r, q.r);
- var w = this.ctx.canvas.width;
- var h = this.ctx.canvas.height;
- var s = w;
- if(h < s) s = h;
- r /= this.scale;
- if(r < 2) r = 2;
- this.ctx.lineWidth = r;
- this.ctx.lineCap = "round";
- this.ctx.beginPath();
- var that = this;
- function f(a, z, c){
-  return (a - z) * s /  that.scale + c / 2;
- }
- this.ctx.moveTo(f(p.x, this.x, w), h - f(p.y, this.y, h));
- this.ctx.lineTo(f(q.x, this.x, w), h - f(q.y, this.y, h));
- this.ctx.globalAlpha = 1;
- if(r > 1)
-  this.ctx.globalAlpha = 1/r;
- this.ctx.stroke();
- this.ctx.globalAlpha = 1;
-};
-Place.prototype.toString = function toString(){
- return "<" + [this.x, this.y].join(", ") + ">*" + this.scale;
-}
-
 function allKeptPromises(proms){
  return Promise.all(
   proms.map(
@@ -74,16 +19,18 @@ function allKeptPromises(proms){
  );
 }
 
-function promiseDrawRoom(cam, clearFirst){
- return promiseReadChatroom().then(
-  function(lines){
+function promiseDrawRoom(cam, clearFirst, room){
+ if(3 > arguments.length) room = promiseReadChatroom();
+ return Promise.resolve(room).then(
+  function(db){
+   if(db instanceof ChatDb) db = db.getLegacyLines();
    return allKeptPromises(
-    lines.map(
+    db.map(
      function(line){
-      return Gesture.promiseFromChat(line, lines);
+      return Gesture.promiseFromChat(line, db);
      }
     )
-   )
+   );
   }
  ).then(
   function(gestures){
@@ -150,18 +97,32 @@ ZoomPan.prototype.transform = function(camera){
  var dx = transformers[0];
  var dy = transformers[1];
  var rho = transformers[2];
- if(!rho) rho = 1;
- return new Place(
-  camera.x - dx,
-  camera.y - dy,
-  camera.scale / rho,
-  camera.ctx
- );
+ return camera.zoomPan(dx, dy, rho);
 };
 
 function Gesture(){
  this.strokes = [];
+ var resolve = null;
+ this.promise = new Promise(
+  function(res, rej){
+   resolve = res;
+  }
+ );
+ this.end = function end(cam, room){
+  resolve(this);
+  return this.endDraw(cam, room);
+ }
 }
+Gesture.prototype.isZoomPan = function isZoomPan(){
+ return 2 == this.strokes.length;
+};
+Gesture.prototype.toZoomPan = function toZoomPan(){
+ return new ZoomPan(this.strokes[0], this.strokes[1]);
+};
+Gesture.prototype.updateCamera = function updateCamera(cam){
+ if(!this.isZoomPan()) return cam;
+ return this.toZoomPan().transform(cam);
+};
 Gesture.prototype.addStroke = function addStroke(stroke){
  this.strokes.push(stroke);
 };
@@ -176,13 +137,10 @@ Gesture.promiseFromChat = function promiseFromChat(line, room){
  if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
  var body = line[1];
+
  var tokens = body.split(" ").filter(I);
- var assertion = {
-  expected: "(gesture",
-  found: tokens.shift()
- };
- if(assertion.expected != assertion.found)
-  return Promise.reject(assertion);
+ var assertion = new AssertEqual("(gesture", tokens.shift());
+ if(!assertion.satisfiedp()) return Promise.reject(assertion);
  var result = new this();
  return Promise.all(
   tokens.map(
@@ -234,18 +192,6 @@ Gesture.prototype.toPromiseChat = function toPromiseChat(){
  );
 };
 Gesture.prototype.send = Stroke.prototype.send;
-Gesture.prototype.end = function end(cam){
- if(2 == this.strokes.length){
-  var zp = new ZoomPan(this.strokes[0], this.strokes[1]);
-  var c = zp.transform(cam);
-  return promiseDrawRoom(c, true).then(K(c));
- }
- return this.send().then(
-  function(msgid){
-   return promiseDrawRoom(cam);
-  }
- ).then(K(cam));
-};
 Gesture.prototype.draw = function draw(cam){
  if(!this.isDone())
   return this.strokes.map(
@@ -261,6 +207,22 @@ Gesture.prototype.draw = function draw(cam){
     return stroke.draw(cam);
    }
   );
+};
+Gesture.prototype.endDraw = function endDraw(cam, room){
+ return Promise.all(
+  [
+   this.updateCamera(cam),
+   this.isZoomPan() ? null : this.send()
+  ].map(Promise.resolve.bind(Promise))
+ ).then(
+  function(args){
+   return args[0];
+  }
+ ).then(
+  function(c){
+   return promiseDrawRoom(c, true, room).then(K(c));
+  }
+ );
 };
 
 function promiseNextFrame(){
@@ -294,10 +256,12 @@ function promiseInitCanvas(canv){
  var activeGesture = null;
  var gestures = [];
  var chatRoom = new ChatDb();
+ var gestureEmitter = null;
  function beginGesture(stroke){
   var gesture = new Gesture();
   gestures.push(gesture);
   activeGesture = gesture;
+  gestureEmitter(activeGesture);
   return gesture;
  }
  function beginStroke(touch, cam){
@@ -315,14 +279,23 @@ function promiseInitCanvas(canv){
   stroke.moveTo(touch, cam);
   stroke.end();
   if(activeGesture.isDone()){
-   cam = activeGesture.end(cam);
+   cam = activeGesture.end(cam, chatRoom);
    activeGesture = null;
   }
   return cam;
  }
+ var result = {};
+ result.gestureStream = new Stream(
+  function(emit){
+   gestureEmitter = emit;
+  }
+ );
+ result.room = chatRoom;
  return Promise.resolve(canv.getContext("2d")).then(
   function(ctx){
-   var camera = new Place(0, 0, 1, ctx);
+   result.ctx = ctx;
+   var camera = new Camera(0, 0, 1, ctx);
+   result.camera = camera;
    function getActiveCamera(){
     if(!activeGesture) return camera;
     var strokes = activeGesture.strokes;
@@ -383,6 +356,8 @@ return true; // TODO: remove
        ).then(
         function(cam){
          camera = cam;
+         result.camera = cam;
+         return touch;
         }
        );
       }
@@ -406,7 +381,7 @@ return true; // TODO: remove
 
    chatRoom.run(1000);
    animate();
-   return ctx;
+   return result;
   }
  );
 }
