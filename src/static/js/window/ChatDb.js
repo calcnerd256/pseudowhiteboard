@@ -50,18 +50,19 @@ function ChatDb(){
 ChatDb.prototype.append = function(line){
  var lineNumber = this.lines.length;
  this.lines.push(line);
+ var that = this;
  var cook = this.middleware.reduce(
   function(prom, oven, i, a){
    return prom.then(
     function(dat){
      return Promise.resolve(oven[0]).then(
       function(filter){
-       return filter(dat);
+       return filter(dat, that);
       }
      ).then(
       function(hungry){
        if(!hungry) return Promise.resolve(dat);
-       return oven[1](dat);
+       return oven[1](dat, that);
       }
      );
     }
@@ -108,6 +109,19 @@ ChatDb.prototype.getLegacyLines = function getLegacyLines(){
   }
  );
 };
+ChatDb.prototype.promiseDereference = function promiseDereference(reference){
+ var that = this;
+ return Promise.resolve(reference).then(
+  function(ref){
+   if("@" != (""+ref).charAt(0))
+    return Promise.reject(["not a reference"], ref, "missing initial @");
+   ref = ref.split("@")[1].split(")")[0].split(" ")[0];
+   if("" + (+ref) != "" + ref)
+    return Promise.reject(["not a reference"], ref, "non-numeric");
+   return that.lines[+ref];
+  }
+ );
+};
 
 
 function AssertEqual(expected, found){
@@ -136,14 +150,35 @@ function chatBodyIsLisp(body){
  var prefix = "/lisp (";
  return body.substring(0, prefix.length) == prefix;
 }
-function chatBodyToLisp(body){
+function chatBodyToLisp(body, room){
+ if(2 > arguments.length) room = promiseReadChatroom();
  if(!chatBodyIsLisp(body)) return null;
  var prefix = "/lisp (";
  var remainder = body.substring(prefix.length);
  if(!remainder.length) return null;
  if(")" != remainder.charAt(remainder.length - 1)) return null;
  // assume flat list, for now
- return remainder.substring(0, remainder.length - 1).split(" ").filter(I);
+ return Promise.all(
+  remainder.substring(0, remainder.length - 1).split(" ").filter(I).map(
+   function(token){
+    if("@" == token.charAt(0))
+     return Promise.resolve(room).then(
+      function(db){
+       if(db instanceof ChatDb)
+        return db.promiseDereference(token);
+       return promiseDerefChat(token, db);
+      }
+     ).then(
+      function(record){
+       var symbolics = chatRecordLispHavers(record);
+       if(symbolics.length) return symbolics[0].lisp;
+       return token;
+      }
+     );
+    return token;
+   }
+  ).map(Promise.resolve.bind(Promise))
+ );
 }
 var lispParseMiddleware = [
  function(labt){
@@ -153,37 +188,44 @@ var lispParseMiddleware = [
   var t = labt[3];
   return chatBodyIsLisp(b);
  },
- function(labt){
+ function(labt, room){
   var l = labt[0];
   var a = labt[1];
   var b = labt[2];
   var t = labt[3];
   return Promise.resolve(
-   chatBodyToLisp(b)
+   chatBodyToLisp(b, room)
   ).then(
    function(symbolicExpression){
-    return [].concat.call(
-     labt,
-     [
-      {
-       lineNumber: l,
-       author: a,
-       body: b,
-       timestamp: t,
-       lisp: symbolicExpression,
-       toString: function(){
-      var tokens = this.lisp.map(
-       function quote(token){
+    symbolicExpression.line = labt.slice();
+    symbolicExpression.toString = function toString(){
+     var tokens = this.map(
+      function quote(token){
+       if("string" == typeof token)
         return "\"" + (
          "" + token
         ).split("\\").join("\\\\").split("\"").join("\\\"") + "\"";
+       if("object" == typeof token){
+        if(token instanceof Array)
+         return toString.call(token);
+        return "unknown_object:(" + (""+token).split(")").join("?") + ")";
        }
-      );
-      return "(" + tokens.join(" ") + ")";
-     }
+       return "error:" + typeof token;
       }
-     ]
+     );
+     return "(" + tokens.join(" ") + ")";
+    }
+    symbolicExpression.line.push(
+     {
+      lineNumber: l,
+      author: a,
+      body: b,
+      timestamp: t,
+      lisp: symbolicExpression,
+      toString: function toString(){return ""+symbolicExpression;}
+     }
     );
+    return symbolicExpression.line;
    }
   );
  }

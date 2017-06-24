@@ -160,7 +160,7 @@ StrokePoint.promiseFromChatLineNumber = function promiseFromChatLineNumber(
    );
    if(hydrated.length) return hydrated[0][water];
    return that.promiseFromLispPromise(
-    hasLisp.length ? hasLisp[0].lisp : chatBodyToLisp(line[1])
+    hasLisp.length ? hasLisp[0].lisp : chatBodyToLisp(line[1], room)
    );
   }
  );

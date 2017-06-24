@@ -27,23 +27,28 @@ Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
  this.previousTouch = p;
 };
 
+Stroke.prototype.typeName = "stroke";
+
+Stroke.prototype.toRefString = StrokePoint.prototype.toRefString;
+Stroke.prototype.hasRef = StrokePoint.prototype.hasRef;
 Stroke.prototype.toString = function(){
- if("msgid" in this)
-  if(("" + (+(this.msgid))) == ("" + (this.msgid)))
-   return "@" + (+this.msgid) + ":stroke";
+ if(this.hasRef())
+   return this.toRefString();
  return "(stroke " + this.points.join(" ") + ")";
 };
 
 Stroke.prototype.done = false;
 
-function promiseDerefChat(ref, room){
+function promiseDerefChat(reference, room){
  if(arguments.length < 2) room = promiseReadChatroom();
- if("@" != (""+ref).charAt(0))
-  return Promise.reject(["not a reference", ref]);
- ref = ref.split("@")[1].split(")")[0];
- return Promise.resolve(room).then(
-  function(lines){
-   if(lines instanceof ChatDb) lines = lines.getLegacyLines();
+ return promiseArgs([reference, room]).then(
+  function(args){
+   var ref = args[0];
+   var lines = args[1];
+   if(lines instanceof ChatDb) return lines.promiseDereference(ref).slice(1);
+   if("@" != (""+ref).charAt(0))
+    return Promise.reject(["not a reference", ref]);
+   ref = ref.split("@")[1].split(")")[0];
    return lines[+ref];
   }
  );
