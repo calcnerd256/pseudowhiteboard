@@ -145,6 +145,32 @@ AssertEqual.prototype.resolve = function(value){
  return Promise.reject(this);
 };
 
+function has(ob, key){
+ if("object" != typeof ob) return false;
+ return key in ob;
+}
+function chatRecordLispHavers(nabtl){
+ return nabtl.filter(
+  function(it){
+   return has(it, "lisp");
+  }
+ )
+}
+function promiseDerefChat(reference, room){
+ if(arguments.length < 2) room = promiseReadChatroom();
+ return promiseArgs([reference, room]).then(
+  function(args){
+   var ref = args[0];
+   var lines = args[1];
+   if(lines instanceof ChatDb) return lines.promiseDereference(ref).slice(1);
+   if("@" != (""+ref).charAt(0))
+    return Promise.reject(["not a reference", ref]);
+   ref = ref.split("@")[1].split(")")[0];
+   return lines[+ref];
+  }
+ );
+}
+
 function chatBodyIsLisp(body){
  // all symbolic expressions are lists, for now
  var prefix = "/lisp (";
@@ -240,6 +266,7 @@ function promiseArgs(args){
 }
 
 
+
 function lispCar(symbolicExpression){
  return Promise.resolve(symbolicExpression).then(
   function(expr){
@@ -293,7 +320,7 @@ function promiseSendLisp(symbolicExpression){
       );
      }
      return (
-      ("send" in hydrated) ? hydrated.send() : promiseSendLisp(expr)
+      ("send" in hydrated) ? hydrated.send() : promiseSendLisp(token)
      ).then(
       function(msgid){
        hydrated.msgid = msgid;
@@ -361,4 +388,36 @@ function promiseSendLisp(symbolicExpression){
    return exprProm.then(doSend);
   }
  );
+}
+
+function lispMiddlewareFactory(cls){
+ return [
+  function canHydrate(nabtl){
+   return !!(chatRecordLispHavers(nabtl).length);
+  },
+  function hydrate(nabtl){
+   return (
+    function hydrate(nabtl){
+     var that = this;
+     var water = this.prototype.typeName;
+     return Promise.all(
+      chatRecordLispHavers(nabtl).map(
+       function(d){
+        return that.promiseFromLispPromise(d.lisp).then(
+         function(value){
+          d[water] = value;
+          d.toString = function(){
+           return "" + this[water];
+          }
+          nabtl[water] = value;
+          return d;
+         }
+        )
+       }
+      )
+     ).then(K(nabtl), K(nabtl));
+    }
+   ).apply(cls, arguments);
+  }
+ ];
 }

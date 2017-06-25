@@ -5,6 +5,8 @@ function StrokePoint(x, y, time, radius){
  this.t = time; // Date
  this.r = radius;
 }
+StrokePoint.prototype.typeName = "point"
+
 StrokePoint.fromTouch = function fromTouch(touch, ctx){
  // touch comes from a touch event from the DOM
  // ctx is a canvas context and maybe shouldn't be here anymore
@@ -16,7 +18,6 @@ StrokePoint.fromTouch = function fromTouch(touch, ctx){
  var r = Math.max(rx, ry);
  return new this(x, y, t, r);
 };
-StrokePoint.prototype.typeName = "point"
 
 StrokePoint.prototype.toRefString = function toRefString(){
  return "@" + (+(this.msgid)) + ":" + this.typeName;
@@ -94,105 +95,4 @@ StrokePoint.prototype.promiseToLisp = function promiseToLisp(){
  );
 };
 
-StrokePoint.prototype.send = function promiseSend(){
- if("msgid" in this)
-  return Promise.resolve(this.msgid);
- var that = this;
- return this.msgid = this.promiseToLisp().then(
-  function(tokens){
-   return Promise.all(
-    tokens.map(
-     function(token){
-      if("string" == typeof token) return token;
-      if("number" == typeof token) return token;
-      return promiseSendLisp(token).then(
-       function(msgid){
-        return "@" + (+msgid);
-       }
-      );
-     }
-    ).map(
-     Promise.resolve.bind(Promise)
-    )
-   );
-  }
- ).then(promiseSendLisp).then(
-  function(msgid){
-   if(!msgid) delete that.msgid;
-   else that.msgid = +msgid;
-   if("msgid" in that) return that.msgid;
-   return Promise.reject(that);
-  },
-  function(error){
-   delete that.msgid;
-   return Promise.reject(error);
-  }
- );
-};
-
-function has(ob, key){
- if("object" != typeof ob) return false;
- return key in ob;
-}
-function chatRecordLispHavers(nabtl){
- return nabtl.filter(
-  function(it){
-   return has(it, "lisp");
-  }
- )
-}
-
-StrokePoint.canHydrate = function canHydrate(nabtl){
- return !!chatRecordLispHavers.length;
-};
-StrokePoint.hydrate = function hydrate(nabtl){
- var that = this;
- var water = this.prototype.typeName;
- return Promise.all(
-  chatRecordLispHavers(nabtl).map(
-   function(d){
-    return that.promiseFromLispPromise(d.lisp).then(
-     function(value){
-      d[water] = value;
-      d.toString = function(){
-       return "" + this[water];
-      };
-      nabtl[water] = value
-      return d;
-     }
-    );
-   }
-  )
- ).then(K(nabtl), K(nabtl));
-};
-StrokePoint.chatMiddleware = [
- StrokePoint.canHydrate,
- function(nabtl){
-  return StrokePoint.hydrate(nabtl);
- }
-];
-
-StrokePoint.promiseFromChatLineNumber = function promiseFromChatLineNumber(
- lineNumber,
- room
-){
- if(arguments.length < 2) room = promiseReadChatroom();
- var that = this;
- return promiseArgs([lineNumber, room]).then(
-  I.apply.bind(promiseDerefChat, null)
- ).then(
-  function(line){
-   var hasLisp = chatRecordLispHavers(line);
-   var water = that.prototype.typeName;
-   var hydrated = hasLisp.filter(
-    function(it){
-     return water in it;
-    }
-   );
-   if(hydrated.length) return hydrated[0][water];
-   return that.promiseFromLispPromise(
-    hasLisp.length ? hasLisp[0].lisp : chatBodyToLisp(line[1], room)
-   );
-  }
- );
-};
+StrokePoint.chatMiddleware = lispMiddlewareFactory(StrokePoint);

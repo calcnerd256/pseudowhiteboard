@@ -7,8 +7,10 @@ function Stroke(index, camera, strokeStyle){
  if(arguments.length >= 3)
   this.strokeStyle = strokeStyle;
 }
+Stroke.prototype.typeName = "stroke";
 
 Stroke.prototype.strokeStyle = "#000000";
+Stroke.prototype.done = false;
 
 Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
  this.camera = cam;
@@ -26,8 +28,9 @@ Stroke.prototype.moveTo = function moveTo(nextTouch, cam){
   );
  this.previousTouch = p;
 };
-
-Stroke.prototype.typeName = "stroke";
+Stroke.prototype.end = function end(){
+ this.done = true;
+};
 
 Stroke.prototype.toRefString = StrokePoint.prototype.toRefString;
 Stroke.prototype.hasRef = StrokePoint.prototype.hasRef;
@@ -37,22 +40,6 @@ Stroke.prototype.toString = function(){
  return "(stroke " + this.points.join(" ") + ")";
 };
 
-Stroke.prototype.done = false;
-
-function promiseDerefChat(reference, room){
- if(arguments.length < 2) room = promiseReadChatroom();
- return promiseArgs([reference, room]).then(
-  function(args){
-   var ref = args[0];
-   var lines = args[1];
-   if(lines instanceof ChatDb) return lines.promiseDereference(ref).slice(1);
-   if("@" != (""+ref).charAt(0))
-    return Promise.reject(["not a reference", ref]);
-   ref = ref.split("@")[1].split(")")[0];
-   return lines[+ref];
-  }
- );
-}
 
 Stroke.promiseFromLispPromise = function promiseFromLispPromise(sp){
  var that = this;
@@ -109,11 +96,13 @@ Stroke.prototype.promiseToLisp = function promiseToLisp(){
   }
  );
 };
+
+// TODO: obviate
 Stroke.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
  var that = this;
- this.msgid = Promise.resolve(
+ return this.msgid = Promise.resolve(
   this.promiseToLisp()
  ).then(
   promiseSendLisp
@@ -127,11 +116,8 @@ Stroke.prototype.send = function promiseSend(){
  );
 };
 
-Stroke.prototype.end = function end(){
- this.done = true;
- var that = this;
- return this.send();
-};
+Stroke.chatMiddleware = lispMiddlewareFactory(Stroke);
+
 Stroke.prototype.draw = function(camera){
  var that = this;
  var colors = [
