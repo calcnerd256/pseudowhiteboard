@@ -54,81 +54,77 @@ function promiseDerefChat(reference, room){
  );
 }
 
-Stroke.promiseFromChat = function promiseFromChat(line, room){
- if(arguments.length < 2) room = promiseReadChatroom();
- var author = line[0];
- var body = line[1];
- var tokens = body.split(" ").filter(I);
- var assertion = new AssertEqual("/lisp", tokens.shift());
- if(!assertion.satisfiedp()) return Promise.reject(assertion);
- assertion = new AssertEqual("(stroke", tokens.shift());
- if(!assertion.satisfiedp()) return Promise.reject(assertion);
- var result = new this();
- return Promise.all(
-  tokens.map(
-   function(token){
-    return token.split(")")[0];
+Stroke.promiseFromLispPromise = function promiseFromLispPromise(sp){
+ var that = this;
+ function checkCar(expr){
+  return lispCar(expr).then(
+   function(oper){
+    return new AssertEqual(that.prototype.typeName, oper).resolve();
    }
-  ).map(
-   function(lineNumber){
-    return StrokePoint.promiseFromChatLineNumber(lineNumber, room);
-   }
-  )
- ).then(
-  function(xs){
-   return xs.filter(I);
+  ).then(K(expr));
+ }
+ var key = that.prototype.typeName;
+ return Promise.resolve(sp).then(
+  function(expr){
+   if(has(expr, "line"))
+    if(key in expr)
+     return expr[key];
+   return checkCar(expr).then(arrayFromLispCdr).then(
+    function hydrate(points){
+     return Promise.all(
+      points.map(
+       StrokePoint.promiseFromLispPromise.bind(StrokePoint)
+      )
+     );
+    }
+   ).then(
+    function construct(points){
+     var result = new that();
+     result.points = points.filter(I);
+     result.done = true;
+     return result;
+    }
+   ).then(
+    function memoize(result){
+     expr[key] = result;
+     return result;
+    }
+   );
   }
- ).then(
-  function(points){
-   result.points = points;
-   result.done = true;
+ );
+};
+Stroke.prototype.promiseToLisp = function promiseToLisp(){
+ var key = this.typeName;
+ var data = this.points.map(
+  function(point){
+   return point.promiseToLisp();
+  }
+ );
+ var that = this;
+ return arrayToLispCons(key, data).then(
+  function(result){
+   result[key] = that;
+   result.typeName = key;
    return result;
   }
  );
 };
-Stroke.prototype.toPromiseChat = function toPromiseChat(){
- return Promise.all(
-  this.points.map(
-   function(point){
-    if("msgid" in point)
-     return Promise.resolve(point.msgid);
-    return point.send();
-   }
-  )
- ).then(
-  function(ptids){
-   var tokens = [].concat(
-    [
-     "stroke"
-    ],
-    ptids.map(
-     function(ptid){
-      return "@" + (+ptid);
-     }
-    )
-   );
-   return "/lisp (" + tokens.join(" ") + ")";
-  }
- );
-};
-Stroke.prototype.send = function send(){
+Stroke.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
  var that = this;
- this.msgid = this.toPromiseChat().then(
-  promiseSendMessage
+ this.msgid = Promise.resolve(
+  this.promiseToLisp()
+ ).then(
+  promiseSendLisp
  ).then(
   function(msgid){
-   if(!msgid)
-    delete that.msgid;
-   else
-    that.msgid = +msgid;
-   if("msgid" in that)
-    return that.msgid;
+   if(!msgid) delete that.msgid;
+   else that.msgid = +msgid;
+   if("msgid" in that) return that.msgid;
    return Promise.reject(that);
   }
  );
- return this.msgid;
 };
 
 Stroke.prototype.end = function end(){

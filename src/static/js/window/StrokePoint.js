@@ -42,43 +42,81 @@ StrokePoint.prototype.toString = function toString(){
 
 StrokePoint.promiseFromLispPromise = function promiseFromLispPromise(sp){
  var that = this;
+ function checkCar(expr){
+  return lispCar(expr).then(
+   function(oper){
+    return new AssertEqual(that.prototype.typeName, oper).resolve();
+   }
+  ).then(K(expr));
+ }
+ var key = that.prototype.typeName;
  return Promise.resolve(sp).then(
   function(expr){
-   return lispCar(expr).then(
-    function(oper){
-     return new AssertEqual(that.prototype.typeName, oper).resolve();
+   if(has(expr, "line"))
+    if(key in expr.line)
+     return expr.line[key];
+   return checkCar(expr).then(arrayFromLispCdr).then(
+    function checkLength(xyrt){
+     return new AssertEqual(4, xyrt.length).resolve(xyrt);
     }
-   ).then(K(expr));
-  }
- ).then(arrayFromLispCdr).then(
-  function(xyrt){
-   return new AssertEqual(4, xyrt.length).resolve(xyrt);
-  }
- ).then(
-  function(xyrt){
-   var x = xyrt[0];
-   var y = xyrt[1];
-   var r = xyrt[2];
-   var t = xyrt[3];
-   return new that(+x, +y, new Date(+t), +r);
+   ).then(
+    function construct(xyrt){
+     var x = xyrt[0];
+     var y = xyrt[1];
+     var r = xyrt[2];
+     var t = xyrt[3];
+     return new that(+x, +y, new Date(+t), +r);
+    }
+   ).then(
+    function memoize(result){
+     expr[key] = result;
+     return result;
+    }
+   );
   }
  );
 };
 StrokePoint.prototype.promiseToLisp = function promiseToLisp(){
+ var key = this.typeName;
  var data = [
   +(this.x),
   +(this.y),
   +(this.r),
   +(this.t - new Date(0))
  ];
- return arrayToLispCons(this.typeName, data);
+ var that = this;
+ return arrayToLispCons(key, data).then(
+  function(result){
+   result[key] = that;
+   result.typeName = key;
+   return result;
+  }
+ );
 };
 
 StrokePoint.prototype.send = function promiseSend(){
  if("msgid" in this)
   return Promise.resolve(this.msgid);
  var that = this;
- return this.msgid = this.promiseToLisp().then(promiseSendLisp).then(
+ return this.msgid = this.promiseToLisp().then(
+  function(tokens){
+   return Promise.all(
+    tokens.map(
+     function(token){
+      if("string" == typeof token) return token;
+      if("number" == typeof token) return token;
+      return promiseSendLisp(token).then(
+       function(msgid){
+        return "@" + (+msgid);
+       }
+      );
+     }
+    ).map(
+     Promise.resolve.bind(Promise)
+    )
+   );
+  }
+ ).then(promiseSendLisp).then(
   function(msgid){
    if(!msgid) delete that.msgid;
    else that.msgid = +msgid;
@@ -119,6 +157,7 @@ StrokePoint.hydrate = function hydrate(nabtl){
       d.toString = function(){
        return "" + this[water];
       };
+      nabtl[water] = value
       return d;
      }
     );
@@ -132,14 +171,6 @@ StrokePoint.chatMiddleware = [
   return StrokePoint.hydrate(nabtl);
  }
 ];
-
-function promiseArgs(args){
- return Promise.all(
-  [].slice.call(args).map(
-   Promise.resolve.bind(Promise)
-  )
- );
-}
 
 StrokePoint.promiseFromChatLineNumber = function promiseFromChatLineNumber(
  lineNumber,

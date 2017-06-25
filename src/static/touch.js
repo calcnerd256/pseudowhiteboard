@@ -137,7 +137,6 @@ Gesture.promiseFromChat = function promiseFromChat(line, room){
  if(arguments.length < 2) room = promiseReadChatroom();
  var author = line[0];
  var body = line[1];
-
  var tokens = body.split(" ").filter(I);
  var assertion = new AssertEqual("(gesture", tokens.shift());
  if(!assertion.satisfiedp()) return Promise.reject(assertion);
@@ -150,7 +149,9 @@ Gesture.promiseFromChat = function promiseFromChat(line, room){
      room
     ).then(
      function(line){
-      return Stroke.promiseFromChat(line, room);
+      return Promise.resolve(chatBodyToLisp(line[1], room)).then(
+       Stroke.promiseFromLispPromise.bind(Stroke)
+      );
      }
     );
    }
@@ -191,7 +192,26 @@ Gesture.prototype.toPromiseChat = function toPromiseChat(){
   }
  );
 };
-Gesture.prototype.send = Stroke.prototype.send;
+
+Gesture.prototype.send = function send(){
+ if("msgid" in this)
+  return Promise.resolve(this.msgid);
+ var that = this;
+ this.msgid = this.toPromiseChat().then(
+  promiseSendMessage
+ ).then(
+  function(msgid){
+   if(!msgid)
+    delete that.msgid;
+   else
+    that.msgid = +msgid;
+   if("msgid" in that)
+    return that.msgid;
+   return Promise.reject(that);
+  }
+ );
+ return this.msgid;
+};
 Gesture.prototype.draw = function draw(cam){
  if(!this.isDone())
   return this.strokes.map(

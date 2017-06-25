@@ -231,6 +231,14 @@ var lispParseMiddleware = [
  }
 ];
 
+function promiseArgs(args){
+ return Promise.all(
+  [].slice.call(args).map(
+   Promise.resolve.bind(Promise)
+  )
+ );
+}
+
 
 function lispCar(symbolicExpression){
  return Promise.resolve(symbolicExpression).then(
@@ -252,14 +260,14 @@ function arrayFromLispCdr(symbolicExpression){
 }
 function arrayToLispCons(head, tail){
  // symbolic expressions are mere arrays for now
- return Promise.all(
-  [head, tail].map(Promise.resolve.bind(Promise))
- ).then(
+ return promiseArgs(arguments).then(
   function(ardr){
    var ar = ardr[0];
    var dr = ardr[1];
    return Promise.all(
-    dr.map(Promise.resolve.bind(Promise))
+    dr.map(
+     Promise.resolve.bind(Promise)
+    )
    ).then(
     function(args){
      return [ar].concat(args);
@@ -270,27 +278,87 @@ function arrayToLispCons(head, tail){
 }
 
 function promiseSendLisp(symbolicExpression){
- // for now, only flat lists of strings are supported
+ // cycles are not allowed
+ function space(expr){
+  function flatten(token){
+   if(has(token, "typeName")){
+    var key = token.typeName;
+    if(key in token){
+     var hydrated = token[key];
+     if("msgid" in hydrated){
+      return Promise.resolve(hydrated.msgid).then(
+       function(ref){
+        return "@" + (+ref);
+       }
+      );
+     }
+     return (
+      ("send" in hydrated) ? hydrated.send() : promiseSendLisp(expr)
+     ).then(
+      function(msgid){
+       hydrated.msgid = msgid;
+       return "@" + (+msgid);
+      }
+     );
+    }
+   }
+
+   if("object" == typeof token)
+    if(token instanceof Array)
+     return promiseSendLisp(token).then(
+      function(msgid){
+       token.msgid = msgid;
+       return "@" + (+msgid);
+      }
+     );
+
+   if(1 == (""+token).split(" ").length)
+    return token;
+   // assume no quoted strings containing spaces, for now
+   return token;
+  }
+  return Promise.all(
+   expr.map(flatten).map(Promise.resolve.bind(Promise))
+  ).then(
+   function(tokens){
+    return tokens.join(" ");
+   }
+  );
+ }
+ function wrap(inner){
+  return "/lisp (" + inner + ")";
+ }
+ function doSend(expr){
+  return space(expr).then(wrap).then(promiseSendMessage).then(
+   function(msgid){
+    if(has(symbolicExpression, "typeName")){
+     var key = symbolicExpression.typeName;
+     if(key in symbolicExpression)
+      symbolicExpression[key].msgid = msgid;
+    }
+    return msgid;
+   }
+  );
+ }
  return Promise.resolve(symbolicExpression).then(
   function(promises){
-   return promises.map(Promise.resolve.bind(Promise));
+   var exprProm = Promise.all(
+    promises.map(Promise.resolve.bind(Promise))
+   );
+   if(has(promises, "typeName")){
+    var key = promises.typeName;
+    if(key in promises)
+     if("msgid" in promises[key])
+      return Promise.resolve(
+       promises[key].msgid
+      ).then(
+       I,
+       function(err){
+        return exprProm.then(doSend);
+       }
+      );
+   }
+   return exprProm.then(doSend);
   }
- ).then(
-  Promise.all.bind(Promise)
- ).then(
-  function(expr){
-   return expr.map(
-    function(token){
-     if(1 == (""+token).split(" ").length)
-      return token;
-     // assume no quoted strings containing spaces, for now
-     return token;
-    }
-   ).join(" ");
-  }
- ).then(
-  function(inner){
-   return "/lisp (" + inner + ")";
-  }
- ).then(promiseSendMessage);
+ );
 }
