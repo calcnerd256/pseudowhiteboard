@@ -42,6 +42,10 @@ var staticFiles = {
  "/js/window/Stroke.js": [
   "application/javascript; charset=utf-8",
    "./static/js/window/Stroke.js"
+ ],
+ "/js/window/Gesture.js": [
+  "application/javascript; charset=utf-8",
+   "./static/js/window/Gesture.js"
  ]
 };
 
