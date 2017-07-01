@@ -50,6 +50,69 @@ function promiseInitCanvas(canv){
  var activeGesture = null;
  var gestures = [];
  var chatRoom = new ChatDb();
+ chatRoom.middleware.push(lispParseMiddleware);
+ chatRoom.middleware.push(StrokePoint.chatMiddleware);
+ chatRoom.middleware.push(Stroke.chatMiddleware);
+ chatRoom.middleware.push(Gesture.chatMiddleware);
+ function promiseChatSymbolicExpressions(){
+  return Promise.resolve(chatRoom).then(
+   function getLines(db){
+    return db.lines;
+   }
+  ).then(
+   function flattenPromise(lines){
+    return Promise.all(lines.map(Promise.resolve.bind(Promise)));
+   }
+  ).then(
+   function onlyLispHavers(lines){
+    return lines.map(chatRecordLispHavers).map(Promise.resolve.bind(Promise));
+   }
+  ).then(Promise.all.bind(Promise)).then(
+   function onlyNonempty(lines){
+    return lines.filter(function(lispHavers){return lispHavers.length;});
+   }
+  ).then(
+   function firstPer(lines){
+    return lines.map(function(lispHavers){return lispHavers[0].lisp;});
+   }
+  );
+ }
+ function promiseRoomGestures(){
+  return Promise.resolve(promiseChatSymbolicExpressions()).then(
+   function onlyGestures(exprs){
+    return exprs.filter(
+     function(expr){
+      return has(expr, Gesture.prototype.typeName);
+     }
+    ).map(
+     function(expr){
+      return expr[Gesture.prototype.typeName];
+     }
+    );
+   }
+  ).then(
+   function onlySome(gs){
+    return gs.filter(I).filter(
+     function oneStroke(g){
+      return 1 == g.strokes.length;
+     }
+    );
+   }
+  );
+ }
+ function drawGestures(gestures, camera){
+  var ctx = camera.ctx;
+  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+  return [].concat.apply(
+   [],
+   gestures.map(
+    function(gesture){
+     return gesture.draw(camera);
+    }
+   )
+  );
+ }
+
  var gestureEmitter = null;
  function beginGesture(stroke){
   var gesture = new Gesture();
@@ -68,71 +131,43 @@ function promiseInitCanvas(canv){
   activeGesture.addStroke(stroke);
   return touch;
  }
+ function endGesture(vehicle){
+  var endingGesture = activeGesture;
+  activeGesture = null;
+  endingGesture.end(vehicle.camera);
+  var promiseGestureMsgid = null;
+  if(!endingGesture.isZoomPan())
+   promiseGestureMsgid = endingGesture.promiseToLisp().then(promiseSendLisp);
+  var key = Gesture.prototype.typeName;
+  return Promise.all(
+   [
+    endingGesture.updateCamera(vehicle.camera),
+    promiseRoomGestures(),
+    promiseGestureMsgid
+   ].map(Promise.resolve.bind(Promise))
+  ).then(
+   function(args){
+    vehicle.camera = args[0];
+    return args[1];
+   }
+  ).then(
+   function appendNewest(gs){
+    return [].concat(gs, [endingGesture]);
+   }
+  ).then(
+   function drawAll(gs){
+    return drawGestures(gs, vehicle.camera);
+   }
+  );
+ }
  function endStroke(touch, vehicle){
   var stroke = strokes[touch.identifier];
   stroke.moveTo(touch, vehicle.camera);
   stroke.end();
-  if(activeGesture.isDone()){
-   activeGesture.end(vehicle.camera);
-   var endingGesture = activeGesture;
-   var result = Promise.resolve(
-    Promise.all(
-     [
-      activeGesture.updateCamera(vehicle.camera),
-      activeGesture.isZoomPan() ?
-       null :
-       Promise.resolve(
-        activeGesture.promiseToLisp()
-       ).then(
-        promiseSendLisp
-       )
-     ].map(
-      Promise.resolve.bind(Promise)
-     )
-    ).then(
-     function(args){
-      var cam = args[0];
-      var gid = args[1];
-      var symbolicExpressions = chatRoom.lines.map(chatRecordLispHavers).filter(
-       function(lispHavers){return lispHavers.length;}
-      ).map(function(nabtl){return nabtl[0].lisp;});;
-      var gestures = symbolicExpressions.filter(
-       function(expr){return has(expr, "gesture");}
-      ).map(
-       function(ge){return ge.gesture}
-      );
-      return Promise.all(
-       gestures.map(Promise.resolve.bind(Promise))
-      ).then(
-       function(gs){
-        return [].concat(gs, [endingGesture]);
-       }
-      ).then(
-       function(gestures){
-        var canv = cam.ctx.canvas;
-        cam.ctx.clearRect(0, 0, canv.width, canv.height);
-        return gestures.filter(I).filter(
-         function(gesture){
-          return 1 == gesture.strokes.length;
-         }
-        ).map(
-         function(gesture){
-          return gesture.draw(cam);
-         }
-        );
-       }
-      ).then(K(cam));
-     }
-    )
-   ).then(
-    function(cam){
-     vehicle.camera = cam;
-    }
-   ).then(K(touch));
-   activeGesture = null;
-   return result;
-  }
-  return touch;
+  var promiseEndGesture = null;
+  if(activeGesture.isDone())
+   promiseEndGesture = endGesture(vehicle);
+  return Promise.resolve(promiseEndGesture).then(K(touch));
  }
  var result = {};
  result.gestureStream = new Stream(
@@ -140,7 +175,37 @@ function promiseInitCanvas(canv){
    gestureEmitter = emit;
   }
  );
+ var emitForeignGestures = false;
+ if(emitForeignGestures)
+  chatRoom.lineEmitter.stream.listen(
+   function emitFirstGesture(line){
+    var lispHavers = chatRecordLispHavers(line);
+    if(!!lispHavers.length) return;
+    var candidates = lispHavers.map(
+     function(lispHaver){
+      return lispHaver.lisp;
+     }
+    );
+    var key = Gesture.prototype.typeName;
+    var gestures = candidates.filter(
+     function(expr){
+     return has(expr, key);
+    }
+    ).map(
+     function(expr){
+     return expr[key];
+    }
+    );
+    if(gestures.length) return gestureEmitter(gestures[0]);
+   }
+  );
  result.room = chatRoom;
+ function sizeCanvas(){
+  var vp = getBrowserViewport();
+  canv.width = vp.vw - 16;
+  canv.height = vp.vh - 16 - 32;
+  return vp;
+ }
  return Promise.resolve(canv.getContext("2d")).then(
   function(ctx){
    result.ctx = ctx;
@@ -152,40 +217,37 @@ function promiseInitCanvas(canv){
     var zp = new ZoomPan(strokes[0], strokes[1]);
     return zp.transform(result.camera);
    }
-   function drawGestures(){
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    var cam = getActiveCamera();
-    return [].concat.apply(
-     [],
-     gestures.filter(
-      function(gesture){
-return true; // TODO: remove
-       return !("msgid" in gesture);
-      }
-     ).concat(
-      [] // TODO: get strokes from room cache
-     ).map(
-      function(gesture){
-       return gesture.draw(cam);
-      }
-     )
-    );
-   }
-   function sizeCanvas(){
-    var vp = getBrowserViewport();
-    canv.width = vp.vw - 16;
-    canv.height = vp.vh - 16 - 32;
-    return vp;
-   }
+   var roomGestures = [];
+   var updatingRoomGestures = false;
    function animate(){
     if(!dirty)
      return promiseNextFrame().then(animate);
-    sizeCanvas();
-    drawGestures();
+    sizeCanvas(canv);
+    drawGestures(
+     gestures.filter(
+      function unsent(gesture){
+       return !("msgid" in gesture);
+      }
+     ).concat(
+      roomGestures
+     ),
+     getActiveCamera()
+    );
     dirty = false;
     var f = Promise.resolve();
     for(var i = 0; i < 4; i++)
      f = f.then(promiseNextFrame);
+    if(!updatingRoomGestures){
+     updatingRoomGestures = true;
+     promiseRoomGestures().then(
+      function(gs){
+       if(gs.length != roomGestures.length)
+        dirty = true;
+       roomGestures = gs;
+       updatingRoomGestures = false;
+      }
+     );
+    }
     return f.then(animate);
    }
    sizeCanvas();
@@ -220,12 +282,9 @@ return true; // TODO: remove
    canv.addEventListener("touchmove", go);
    canv.addEventListener("touchend", makeStartStop(endStroke));
 
-   chatRoom.middleware.push(lispParseMiddleware);
-   chatRoom.middleware.push(StrokePoint.chatMiddleware);
-   chatRoom.middleware.push(Stroke.chatMiddleware);
-   chatRoom.middleware.push(Gesture.chatMiddleware);
-
    chatRoom.run(1000);
+   chatRoom.lineEmitter.stream.listen(function(){dirty = true;});
+   dirty = true;
    animate();
    return result;
   }
