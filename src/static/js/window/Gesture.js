@@ -56,6 +56,7 @@ function Gesture(){
   resolve(this);
  }
 }
+Gesture.prototype.typeName = "gesture";
 Gesture.prototype.isZoomPan = function isZoomPan(){
  return 2 == this.strokes.length;
 };
@@ -76,85 +77,80 @@ Gesture.prototype.isDone = function isDone(){
   }
  );
 };
-Gesture.promiseFromChat = function promiseFromChat(line, room){
- if(arguments.length < 2) room = promiseReadChatroom();
- var author = line[0];
- var body = line[1];
- var tokens = body.split(" ").filter(I);
- var assertion = new AssertEqual("(gesture", tokens.shift());
- if(!assertion.satisfiedp()) return Promise.reject(assertion);
- var result = new this();
- return Promise.all(
-  tokens.map(
-   function(token){
-    return promiseDerefChat(
-     token.split(")")[0],
-     room
-    ).then(
-     function(line){
-      return Promise.resolve(chatBodyToLisp(line[1], room)).then(
-       Stroke.promiseFromLispPromise.bind(Stroke)
-      );
-     }
-    );
+Gesture.prototype.toString = function(){
+ var s = this.strokes;
+ var l = s.length;
+ if(!this.isDone()) return "(incomplete gesture " + l + ")";
+ if(1 == l)
+  return "(gesture.stroke " + s[0] + ")";
+ if(2 == l)
+  return "(gesture.zoomPan " + this.toZoomPan() + ")";
+ return "(gesture.strokes " + l + ")";
+}
+
+Gesture.promiseFromLispPromise = function promiseFromLispPromise(sp){
+ var key = this.prototype.typeName;
+ function checkCar(expr){
+  return lispCar(expr).then(
+   function(oper){
+    return new AssertEqual(key, oper).resolve();
    }
-  )
- ).then(
-  function(xs){
-   return xs.filter(I);
-  }
- ).then(
-  function(strokes){
-   result.strokes = strokes;
-   return result;
+  ).then(K(expr));
+ }
+ var that = this;
+ return Promise.resolve(sp).then(
+  function(expr){
+   if(has(expr, "line"))
+    if(key in expr)
+     return expr[key];
+   return checkCar(expr).then(arrayFromLispCdr).then(
+    function hydrate(strokes){
+     return Promise.all(
+      strokes.map(
+       Stroke.promiseFromLispPromise.bind(Stroke)
+      )
+     );
+    }
+   ).then(
+    function construct(strokes){
+     var result = new that();
+     strokes.map(result.addStroke.bind(result));
+     result.end();
+     return result;
+    }
+   ).then(
+    function memoize(result){
+     expr[key] = result;
+     return result;
+    }
+   );
   }
  );
 };
-Gesture.prototype.toPromiseChat = function toPromiseChat(){
+Gesture.prototype.promiseToLisp = function promiseToLisp(){
+ var key = this.typeName;
+ var that = this;
  return Promise.all(
   this.strokes.map(
    function(stroke){
-    if("msgid" in stroke)
-     return Promise.resolve(stroke.msgid);
-    return Promise.resolve(stroke.send());
+    return stroke.promiseToLisp();
    }
-  )
+  ).map(Promise.resolve.bind(Promise))
  ).then(
-  function(stids){
-   var tokens = [].concat(
-    [
-     "gesture"
-    ],
-    stids.map(
-     function(strokeId){
-      return "@" + (+strokeId);
-     }
-    )
+  function(data){
+   return arrayToLispCons(key, data).then(
+    function(result){
+     result[key] = that;
+     result.typeName = key;
+     return result;
+    }
    );
-   return "(" + tokens.join(" ") + ")";
   }
  );
 };
 
-Gesture.prototype.send = function send(){
- if("msgid" in this)
-  return Promise.resolve(this.msgid);
- var that = this;
- this.msgid = this.toPromiseChat().then(
-  promiseSendMessage
- ).then(
-  function(msgid){
-   if(!msgid)
-    delete that.msgid;
-   else
-    that.msgid = +msgid;
-   if("msgid" in that)
-    return that.msgid;
-   return Promise.reject(that);
-  }
- );
- return this.msgid;
-};
+Gesture.chatMiddleware = lispMiddlewareFactory(Gesture);
+
 Gesture.prototype.draw = function draw(cam){
  if(!this.isDone())
   return this.strokes.map(

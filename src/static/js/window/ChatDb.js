@@ -102,13 +102,6 @@ ChatDb.prototype.run = function run(timestep){
   this.run.bind(this)
  );
 };
-ChatDb.prototype.getLegacyLines = function getLegacyLines(){
- return this.lines.map(
-  function(line){
-   return line.slice(1);
-  }
- );
-};
 ChatDb.prototype.promiseDereference = function promiseDereference(reference){
  var that = this;
  return Promise.resolve(reference).then(
@@ -162,7 +155,12 @@ function promiseDerefChat(reference, room){
   function(args){
    var ref = args[0];
    var lines = args[1];
-   if(lines instanceof ChatDb) return lines.promiseDereference(ref).slice(1);
+   if(lines instanceof ChatDb)
+    return Promise.resolve(
+     lines.promiseDereference(ref)
+    ).then(
+     function(line){return line.slice(1);}
+    );
    if("@" != (""+ref).charAt(0))
     return Promise.reject(["not a reference", ref]);
    ref = ref.split("@")[1].split(")")[0];

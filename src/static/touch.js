@@ -27,36 +27,6 @@ function allKeptPromises(proms){
  );
 }
 
-function promiseDrawRoom(cam, clearFirst, room){
- if(3 > arguments.length) room = promiseReadChatroom();
- return Promise.resolve(room).then(
-  function(db){
-   if(db instanceof ChatDb) db = db.getLegacyLines();
-   return allKeptPromises(
-    db.map(
-     function(line){
-      return Gesture.promiseFromChat(line, db);
-     }
-    )
-   );
-  }
- ).then(
-  function(gestures){
-   var canv = cam.ctx.canvas;
-   if(clearFirst)
-    cam.ctx.clearRect(0, 0, canv.width, canv.height);
-   return gestures.filter(I).filter(
-    function(gesture){
-     return 1 == gesture.strokes.length;
-    }
-   ).map(
-    function(gesture){
-     return gesture.draw(cam);
-    }
-   );
-  }
- );
-}
 function getBrowserViewport(){
  // thanks https://github.com/ryanve/verge/blob/master/src/verge.js
  var win = null;
@@ -104,21 +74,54 @@ function promiseInitCanvas(canv){
   stroke.end();
   if(activeGesture.isDone()){
    activeGesture.end(vehicle.camera);
+   var endingGesture = activeGesture;
    var result = Promise.resolve(
     Promise.all(
      [
       activeGesture.updateCamera(vehicle.camera),
-      activeGesture.isZoomPan() ? null : activeGesture.send()
+      activeGesture.isZoomPan() ?
+       null :
+       Promise.resolve(
+        activeGesture.promiseToLisp()
+       ).then(
+        promiseSendLisp
+       )
      ].map(
       Promise.resolve.bind(Promise)
      )
     ).then(
      function(args){
-      return args[0];
-     }
-    ).then(
-     function(c){
-      return promiseDrawRoom(c, true, chatRoom).then(K(c));
+      var cam = args[0];
+      var gid = args[1];
+      var symbolicExpressions = chatRoom.lines.map(chatRecordLispHavers).filter(
+       function(lispHavers){return lispHavers.length;}
+      ).map(function(nabtl){return nabtl[0].lisp;});;
+      var gestures = symbolicExpressions.filter(
+       function(expr){return has(expr, "gesture");}
+      ).map(
+       function(ge){return ge.gesture}
+      );
+      return Promise.all(
+       gestures.map(Promise.resolve.bind(Promise))
+      ).then(
+       function(gs){
+        return [].concat(gs, [endingGesture]);
+       }
+      ).then(
+       function(gestures){
+        var canv = cam.ctx.canvas;
+        cam.ctx.clearRect(0, 0, canv.width, canv.height);
+        return gestures.filter(I).filter(
+         function(gesture){
+          return 1 == gesture.strokes.length;
+         }
+        ).map(
+         function(gesture){
+          return gesture.draw(cam);
+         }
+        );
+       }
+      ).then(K(cam));
      }
     )
    ).then(
@@ -216,6 +219,11 @@ return true; // TODO: remove
    canv.addEventListener("touchstart", makeStartStop(beginStroke));
    canv.addEventListener("touchmove", go);
    canv.addEventListener("touchend", makeStartStop(endStroke));
+
+   chatRoom.middleware.push(lispParseMiddleware);
+   chatRoom.middleware.push(StrokePoint.chatMiddleware);
+   chatRoom.middleware.push(Stroke.chatMiddleware);
+   chatRoom.middleware.push(Gesture.chatMiddleware);
 
    chatRoom.run(1000);
    animate();

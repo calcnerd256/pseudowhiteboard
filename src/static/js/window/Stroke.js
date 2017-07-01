@@ -42,15 +42,15 @@ Stroke.prototype.toString = function(){
 
 
 Stroke.promiseFromLispPromise = function promiseFromLispPromise(sp){
- var that = this;
+ var key = this.prototype.typeName;
  function checkCar(expr){
   return lispCar(expr).then(
    function(oper){
-    return new AssertEqual(that.prototype.typeName, oper).resolve();
+    return new AssertEqual(key, oper).resolve();
    }
   ).then(K(expr));
  }
- var key = that.prototype.typeName;
+ var that = this;
  return Promise.resolve(sp).then(
   function(expr){
    if(has(expr, "line"))
@@ -93,25 +93,6 @@ Stroke.prototype.promiseToLisp = function promiseToLisp(){
    result[key] = that;
    result.typeName = key;
    return result;
-  }
- );
-};
-
-// TODO: obviate
-Stroke.prototype.send = function promiseSend(){
- if("msgid" in this)
-  return Promise.resolve(this.msgid);
- var that = this;
- return this.msgid = Promise.resolve(
-  this.promiseToLisp()
- ).then(
-  promiseSendLisp
- ).then(
-  function(msgid){
-   if(!msgid) delete that.msgid;
-   else that.msgid = +msgid;
-   if("msgid" in that) return that.msgid;
-   return Promise.reject(that);
   }
  );
 };
