@@ -83,7 +83,28 @@ ChatDb.prototype.sync = function sync(){
  return promiseReadChatroom().then(
   function(lines){
    if(lines.length == that.lines.length) return [];
-   return lines.slice(that.lines.length).map(that.append.bind(that));
+   var incoming = lines.slice(that.lines.length);
+   return incoming.reduce(
+    function(accumulator, line){
+     return accumulator.then(
+      function(acc){
+       return that.append(line).then(
+        function(result){
+         return [acc, result];
+        }
+       );
+      }
+     ).then(
+      function(args){
+       var acc = args[0];
+       var result = args[1];
+       return acc.concat([result]);
+      }
+     );
+    },
+    Promise.resolve([])
+   );
+   //return incoming.map(that.append.bind(that));
   }
  );
 };
@@ -175,7 +196,8 @@ function chatBodyIsLisp(body){
  return body.substring(0, prefix.length) == prefix;
 }
 function chatBodyToLisp(body, room){
- if(2 > arguments.length) room = promiseReadChatroom();
+ if(2 > arguments.length)
+  throw new Error("chatroom is now a required parameter");
  if(!chatBodyIsLisp(body)) return null;
  var prefix = "/lisp (";
  var remainder = body.substring(prefix.length);
@@ -388,6 +410,7 @@ function promiseSendLisp(symbolicExpression){
  );
 }
 
+var chatRecords = [];
 function lispMiddlewareFactory(cls){
  return [
   function canHydrate(nabtl){
@@ -398,11 +421,13 @@ function lispMiddlewareFactory(cls){
     function hydrate(nabtl){
      var that = this;
      var water = this.prototype.typeName;
+     var lineNumber = nabtl[0];
      return Promise.all(
       chatRecordLispHavers(nabtl).map(
        function(d){
         return that.promiseFromLispPromise(d.lisp).then(
          function(value){
+          chatRecords[lineNumber] = d;
           d[water] = value;
           d.toString = function(){
            return "" + this[water];

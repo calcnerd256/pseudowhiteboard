@@ -223,16 +223,14 @@ function promiseInitCanvas(canv){
     if(!dirty)
      return promiseNextFrame().then(animate);
     sizeCanvas(canv);
-    drawGestures(
-     gestures.filter(
-      function unsent(gesture){
-       return !("msgid" in gesture);
-      }
-     ).concat(
-      roomGestures
-     ),
-     getActiveCamera()
+    var gs = gestures.filter(
+     function unsent(gesture){
+      return !("msgid" in gesture);
+     }
+    ).concat(
+     roomGestures
     );
+    drawGestures(gs, getActiveCamera());
     dirty = false;
     var f = Promise.resolve();
     for(var i = 0; i < 4; i++)
