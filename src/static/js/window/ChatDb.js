@@ -1,13 +1,3 @@
-function I(x){return x;}
-
-function K(x){
- function konstant(){
-  return x;
- };
- konstant.x = x;
- return konstant;
-}
-
 function Stream(emitterCatcher){
  /*
   // usage:
@@ -159,10 +149,6 @@ AssertEqual.prototype.resolve = function(value){
  return Promise.reject(this);
 };
 
-function has(ob, key){
- if("object" != typeof ob) return false;
- return key in ob;
-}
 function chatRecordLispHavers(nabtl){
  return nabtl.filter(
   function(it){

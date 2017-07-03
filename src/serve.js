@@ -24,6 +24,7 @@ var staticFiles = {
   "./static/desktop.js"
  ],
  "/ajax.js": ["application/javascript; charset=utf-8", "./static/ajax.js"],
+ "/util.js": ["application/javascript; charset=utf-8", "./static/util.js"],
  "/client.js": ["application/javascript; charset=utf-8", "./static/client.js"],
  "/promise.js": ["application/javascript; charset=utf-8", "./promise.js"],
  "/touch.js": ["application/javascript; charset=utf-8", "./static/touch.js"],
