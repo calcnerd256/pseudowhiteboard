@@ -44,6 +44,7 @@ function getBrowserViewport(){
   vh: window.innerHeight
  };
 }
+
 function promiseInitCanvas(canv){
  var strokes = {};
  var dirty = true;
@@ -136,12 +137,18 @@ function promiseInitCanvas(canv){
   activeGesture = null;
   endingGesture.end(vehicle.camera);
   var promiseGestureMsgid = null;
-  if(!endingGesture.isZoomPan())
+  var es = endingGesture.strokes;
+  var interpretation = endingGesture.interpret();
+  var isZoomPan = interpretation instanceof ZoomPan;
+  if(!isZoomPan)
    promiseGestureMsgid = endingGesture.promiseToLisp().then(promiseSendLisp);
   var key = Gesture.prototype.typeName;
+  var cameraUpdate = vehicle.camera;
+  if(isZoomPan)
+   cameraUpdate = (new ZoomPan(es[0], es[1])).transform(vehicle.camera);
   return Promise.all(
    [
-    endingGesture.updateCamera(vehicle.camera),
+    cameraUpdate,
     promiseRoomGestures(),
     promiseGestureMsgid
    ].map(Promise.resolve.bind(Promise))
