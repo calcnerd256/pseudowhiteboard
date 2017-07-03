@@ -154,34 +154,13 @@ function promiseInitCanvas(canv){
 
  var gestureEmitter = null;
  var result = {};
+ var emitInterp = null;
  function beginGesture(stroke){
   var gesture = new Gesture();
   gestures.push(gesture);
   activeGesture = gesture;
   gestureEmitter(activeGesture);
-  gesture.promise.then(
-   function(interpretation){
-    function drawEm(ds){
-     drawGestures(ds, result.camera);
-    }
-    if(interpretation instanceof ZoomPan)
-     return Promise.resolve(
-      interpretation.transform(result.camera)
-     ).then(
-      function(cam){
-       result.camera = cam;
-      }
-     ).then(promiseRoomDrawables).then(drawEm);
-    else
-     return interpretation.promiseToLisp().then(promiseSendLisp).then(
-      promiseRoomDrawables
-     ).then(
-      function appendNewest(ds){
-      return [].concat(ds, [interpretation]);
-     }
-     ).then(drawEm);
-   }
-  );
+  gesture.promise.then(emitInterp);
   return gesture;
  }
  function beginStroke(touch, vehicle){
@@ -213,30 +192,67 @@ function promiseInitCanvas(canv){
    gestureEmitter = emit;
   }
  );
- var emitForeignGestures = false;
- if(emitForeignGestures)
-  chatRoom.lineEmitter.stream.listen(
-   function emitFirstGesture(line){
-    var lispHavers = chatRecordLispHavers(line);
-    if(!!lispHavers.length) return;
-    var candidates = lispHavers.map(
-     function(lispHaver){
-      return lispHaver.lisp;
+ result.gestureBeginStream = result.gestureStream;
+ result.gestureEndStream = new Stream(
+  function(emit){
+   emitInterp = emit;
+  }
+ );
+ result.gestureEndStream.listen(
+  function(interpretation){
+   function drawEm(ds){
+    drawGestures(ds, result.camera);
+   }
+   if(interpretation instanceof ZoomPan)
+    return Promise.resolve(
+     interpretation.transform(result.camera)
+    ).then(
+     function(cam){
+      result.camera = cam;
      }
-    );
-    var key = Gesture.prototype.typeName;
-    var gestures = candidates.filter(
-     function(expr){
+    ).then(promiseRoomDrawables).then(drawEm);
+   else
+    return interpretation.promiseToLisp().then(promiseSendLisp).then(
+     promiseRoomDrawables
+    ).then(
+     function appendNewest(ds){
+     return [].concat(ds, [interpretation]);
+    }
+    ).then(drawEm);
+  }
+ );
+ var emitForeign = null;
+ result.gestureRoomStream = new Stream(
+  function(emit){
+   emitForeign = emit;
+  }
+ );
+ chatRoom.lineEmitter.stream.listen(
+  function emitFirstGesture(line){
+   var lispHavers = chatRecordLispHavers(line);
+   if(!!lispHavers.length) return;
+   var candidates = lispHavers.map(
+    function(lispHaver){
+     return lispHaver.lisp;
+    }
+   );
+   var key = Gesture.prototype.typeName;
+   var gestures = candidates.filter(
+    function(expr){
      return has(expr, key);
     }
-    ).map(
-     function(expr){
+   ).map(
+    function(expr){
      return expr[key];
     }
-    );
-    if(gestures.length) return gestureEmitter(gestures[0]);
-   }
-  );
+   );
+   if(gestures.length)
+    return emitForeign(gestures[0].interpret());
+  }
+ );
+ var emitForeignGestures = false;
+ if(emitForeignGestures)
+  result.gestureRoomStream.listen(emitInterp);
  result.room = chatRoom;
  function sizeCanvas(){
   var vp = getBrowserViewport();
