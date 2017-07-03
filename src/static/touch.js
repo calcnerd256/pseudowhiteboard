@@ -78,6 +78,44 @@ function promiseInitCanvas(canv){
    }
   );
  }
+ function promiseRoomHydrates(){
+  return Promise.resolve(promiseChatSymbolicExpressions()).then(
+   function onlyTypeHaving(exprs){
+    return exprs.filter(
+     function(expr){
+      return has(expr, "line");
+     }
+    ).map(
+     function(expr){
+      return expr.line;
+     }
+    ).filter(
+     function(line){
+      return has(line, "typeName");
+     }
+    ).filter(
+     function(line){
+      return line.typeName in line;
+     }
+    ).map(
+     function(line){
+      return line[line.typeName];
+     }
+    );
+   }
+  );
+ }
+ function promiseRoomDrawables(){
+  return Promise.resolve(promiseRoomHydrates()).then(
+   function(hydrates){
+    return hydrates.filter(
+     function(ob){
+      return has(ob, "draw");
+     }
+    );
+   }
+  );
+ }
  function promiseRoomGestures(){
   return Promise.resolve(promiseChatSymbolicExpressions()).then(
    function onlyGestures(exprs){
@@ -115,11 +153,35 @@ function promiseInitCanvas(canv){
  }
 
  var gestureEmitter = null;
+ var result = {};
  function beginGesture(stroke){
   var gesture = new Gesture();
   gestures.push(gesture);
   activeGesture = gesture;
   gestureEmitter(activeGesture);
+  gesture.promise.then(
+   function(interpretation){
+    function drawEm(ds){
+     drawGestures(ds, result.camera);
+    }
+    if(interpretation instanceof ZoomPan)
+     return Promise.resolve(
+      interpretation.transform(result.camera)
+     ).then(
+      function(cam){
+       result.camera = cam;
+      }
+     ).then(promiseRoomDrawables).then(drawEm);
+    else
+     return interpretation.promiseToLisp().then(promiseSendLisp).then(
+      promiseRoomDrawables
+     ).then(
+      function appendNewest(ds){
+      return [].concat(ds, [interpretation]);
+     }
+     ).then(drawEm);
+   }
+  );
   return gesture;
  }
  function beginStroke(touch, vehicle){
@@ -136,36 +198,6 @@ function promiseInitCanvas(canv){
   var endingGesture = activeGesture;
   activeGesture = null;
   endingGesture.end(vehicle.camera);
-  var promiseGestureMsgid = null;
-  var es = endingGesture.strokes;
-  var interpretation = endingGesture.interpret();
-  var isZoomPan = interpretation instanceof ZoomPan;
-  if(!isZoomPan)
-   promiseGestureMsgid = endingGesture.promiseToLisp().then(promiseSendLisp);
-  var key = Gesture.prototype.typeName;
-  var cameraUpdate = vehicle.camera;
-  if(isZoomPan)
-   cameraUpdate = (new ZoomPan(es[0], es[1])).transform(vehicle.camera);
-  return Promise.all(
-   [
-    cameraUpdate,
-    promiseRoomGestures(),
-    promiseGestureMsgid
-   ].map(Promise.resolve.bind(Promise))
-  ).then(
-   function(args){
-    vehicle.camera = args[0];
-    return args[1];
-   }
-  ).then(
-   function appendNewest(gs){
-    return [].concat(gs, [endingGesture]);
-   }
-  ).then(
-   function drawAll(gs){
-    return drawGestures(gs, vehicle.camera);
-   }
-  );
  }
  function endStroke(touch, vehicle){
   var stroke = strokes[touch.identifier];
@@ -176,7 +208,6 @@ function promiseInitCanvas(canv){
    promiseEndGesture = endGesture(vehicle);
   return Promise.resolve(promiseEndGesture).then(K(touch));
  }
- var result = {};
  result.gestureStream = new Stream(
   function(emit){
    gestureEmitter = emit;
@@ -244,7 +275,7 @@ function promiseInitCanvas(canv){
      f = f.then(promiseNextFrame);
     if(!updatingRoomGestures){
      updatingRoomGestures = true;
-     promiseRoomGestures().then(
+     promiseRoomDrawables().then(
       function(gs){
        if(gs.length != roomGestures.length)
         dirty = true;

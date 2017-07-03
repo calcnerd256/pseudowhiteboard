@@ -414,10 +414,16 @@ function lispMiddlewareFactory(cls){
         return that.promiseFromLispPromise(d.lisp).then(
          function(value){
           chatRecords[lineNumber] = d;
+          if(!("typeName" in d))
+           d.typeName = water;
           d[water] = value;
+          if(!("typeName" in value))
+           value.typeName = water;
           d.toString = function(){
            return "" + this[water];
           }
+          if(!("typeName" in nabtl))
+           nabtl.typeName = water;
           nabtl[water] = value;
           return d;
          }

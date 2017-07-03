@@ -116,14 +116,16 @@ Gesture.prototype.draw = function draw(cam){
     return stroke.draw(cam);
    }
   );
- if(1 == this.strokes.length)
-  return [this.strokes[0].draw(cam)];
- if(2 < this.strokes.length) // TODO: remove this case
+ var interpretation = this.interpret();
+ if(interpretation == this)
   return this.strokes.map(
    function(stroke){
     return stroke.draw(cam);
    }
   );
+ if(interpretation instanceof Stroke)
+  return [interpretation.draw(cam)];
+ return interpretation.draw(cam);
 };
 
 Gesture.prototype.middleware.push(
@@ -174,7 +176,11 @@ ZoomPan.prototype.transformators = function(){
  if(!ra) ra = rb;
  return [dx, dy, Math.sqrt(rb / ra)];
 };
-ZoomPan.prototype.draw = function draw(cam){};
+ZoomPan.prototype.draw = function draw(cam){
+ var done = this.thumb.done && this.finger.done;
+ if(done) return [];
+ return [this.thumb.draw(cam), this.finger.draw(cam)];
+};
 ZoomPan.prototype.transform = function(camera){
  var transformers = this.transformators();
  if(3 != transformers.length) return camera;
