@@ -109,6 +109,8 @@ function TouchInputCanvas(canvas){
    );
   }
  );
+ this.ctx = this.canvas.getContext("2d");
+ this.camera = new Camera(0, 0, 1, this.ctx);
 }
 TouchInputCanvas.prototype.symbolicExpressionsFromRoom = function(){
  return Promise.resolve(this.room).then(
@@ -238,26 +240,57 @@ TouchInputCanvas.prototype.sizeCanvas = function(){
  this.canvas.height = vp.vh - 16;
  return vp;
 };
+TouchInputCanvas.prototype.getActiveCamera = function(){
+ if(!this.activeGesture) return this.camera;
+ var strokes = this.activeGesture.strokes;
+ if(2 != strokes.length) return this.camera;
+ var zp = new ZoomPan(strokes[0], strokes[1]);
+ return zp.transform(this.camera);
+};
+TouchInputCanvas.prototype.consumeTouchEvent = function(evt){
+ evt.preventDefault();
+ this.dirty = true;
+};
+TouchInputCanvas.prototype.paint = function(roomDrawablesCache){
+ this.sizeCanvas();
+ var drawables = this.gestures.filter(
+  function hasUnsent(gesture){
+   if(!gesture.isDone()) return true;
+   return gesture.strokes.some(
+    function unsent(stroke){
+     return !("msgid" in stroke);
+    }
+   );
+  }
+ ).concat(roomDrawablesCache);
+ var activeCamera = this.getActiveCamera();
+ var ctx = activeCamera.ctx;
+ var canvas = ctx.canvas;
+ ctx.clearRect(0, 0, canvas.width, canvas.height);
+ var strokeses = drawables.map(
+  function drawIt(drawable){
+   return drawable.draw(activeCamera);
+  }
+ );
+ var strokes = [].concat.apply([], strokeses);
+ this.dirty = false;
+};
 
 function promiseInitCanvas(canv){
  return Promise.resolve(new TouchInputCanvas(canv)).then(
   function(toucher){
-   function drawGestures(gestures, camera){
-    var ctx = camera.ctx;
-    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-    return [].concat.apply(
-     [],
-     gestures.map(
-      function(gesture){
-       return gesture.draw(camera);
-      }
-     )
-    );
-   }
    toucher.gestureEndStream.listen(
     function(interpretation){
-     function drawEm(ds){
-      drawGestures(ds, toucher.camera);
+     function drawEm(drawables){
+      var ctx = toucher.camera.ctx;
+      var canvas = ctx.canvas;
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      var strokeses = drawables.map(
+       function drawIt(drawable){
+        return drawable.draw(toucher.camera);
+       }
+      );
+      return [].concat.apply([], strokeses);
      }
      if(interpretation instanceof ZoomPan)
       return Promise.resolve(
@@ -284,96 +317,78 @@ function promiseInitCanvas(canv){
     }
    );
 
-   var ctx = toucher.canvas.getContext("2d");
-   toucher.ctx = ctx;
-   toucher.camera = new Camera(0, 0, 1, ctx);
-   function getActiveCamera(){
-    if(!toucher.activeGesture) return toucher.camera;
-    var strokes = toucher.activeGesture.strokes;
-    if(2 != strokes.length) return toucher.camera;
-    var zp = new ZoomPan(strokes[0], strokes[1]);
-    return zp.transform(toucher.camera);
-   }
-   var roomGestures = [];
    var updatingRoomGestures = false;
+   var roomGestures = [];
+   function promiseUpdateRoomGestures(){
+    if(updatingRoomGestures) return Promise.resolve();
+    updatingRoomGestures = true;
+    return Promise.resolve(
+     toucher.drawablesFromRoom()
+    ).then(
+     function(drawables){
+      if(drawables.length != roomGestures.length)
+       toucher.dirty = true;
+      roomGestures = drawables;
+      updatingRoomGestures = false;
+     }
+    );
+   }
+
    function animate(){
     if(!toucher.dirty)
      return promiseNextFrame().then(animate);
-    toucher.sizeCanvas();
-    var gs = toucher.gestures.filter(
-     function unsent(gesture){
-      return !("msgid" in gesture);
-     }
-    ).concat(
-     roomGestures
-    );
-    drawGestures(gs, getActiveCamera());
-    toucher.dirty = false;
+    toucher.paint(roomGestures);
     var f = Promise.resolve();
     for(var i = 0; i < 4; i++)
      f = f.then(promiseNextFrame);
-    if(!updatingRoomGestures){
-     updatingRoomGestures = true;
-     toucher.drawablesFromRoom().then(
-      function(gs){
-       if(gs.length != roomGestures.length)
-        toucher.dirty = true;
-       roomGestures = gs;
-       updatingRoomGestures = false;
-      }
-     );
-    }
+    promiseUpdateRoomGestures();
     return f.then(animate);
    }
+
    toucher.sizeCanvas();
-
-   function consumeTouchEvent(evt){
-    evt.preventDefault();
-    toucher.dirty = true;
-   }
-
-   function makeStartStop(processTouch){
-    return function eventHandler(touchEvent){
-     consumeTouchEvent(touchEvent);
-     return [].slice.call(touchEvent.changedTouches).map(
-      function(touch){
-       return Promise.resolve(processTouch(touch, toucher));
-      }
-     );
-    };
-   }
-   function go(touchEvent){
-    consumeTouchEvent(touchEvent);
-    return [].slice.call(touchEvent.touches).map(
-     function(touch){
-      var stroke = toucher.strokes[touch.identifier];
-      stroke.moveTo(touch, toucher.camera);
-      return stroke;
-     }
-    );
-   }
 
    canv.addEventListener(
     "touchstart",
-    makeStartStop(
-     function beginStroke(touch, vehicle){
-      toucher.beginStroke(touch, vehicle);
-      return touch;
-     }
-    )
+    function strokeStart(touchEvent){
+     toucher.consumeTouchEvent(touchEvent);
+     return [].slice.call(touchEvent.changedTouches).map(
+      function(touch){
+       toucher.beginStroke(touch, toucher);
+       return Promise.resolve(touch);
+      }
+     );
+    }
    );
-   canv.addEventListener("touchmove", go);
+   canv.addEventListener(
+    "touchmove",
+    function go(touchEvent){
+     toucher.consumeTouchEvent(touchEvent);
+     return [].slice.call(touchEvent.touches).map(
+      function(touch){
+       var stroke = toucher.strokes[touch.identifier];
+       stroke.moveTo(touch, toucher.camera);
+       return stroke;
+      }
+     );
+    }
+   );
+
    canv.addEventListener(
     "touchend",
-    makeStartStop(
-     function(touch, vehicle){
-      return Promise.resolve(
-       toucher.endStroke(touch, vehicle)
-      ).then(
-       K(touch)
-      );
-     }
-    )
+    function eventHandler(touchEvent){
+     toucher.consumeTouchEvent(touchEvent);
+     return [].slice.call(touchEvent.changedTouches).map(
+      function(touch){
+       return Promise.resolve(
+        Promise.resolve(
+         toucher.endStroke(touch, toucher)
+        ).then(
+         K(touch)
+        )
+       );
+      }
+     );
+    }
    );
 
    toucher.room.run(1000);
