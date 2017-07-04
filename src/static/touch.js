@@ -41,243 +41,266 @@ function getBrowserViewport(){
   w: x,
   h: y,
   vw: window.innerWidth,
-  vh: window.innerHeight
+  vh: window.innerHeight - 16
  };
 }
 
-function promiseInitCanvas(canv){
- var strokes = {};
- var dirty = true;
- var activeGesture = null;
- var gestures = [];
- var chatRoom = new ChatDb();
- chatRoom.middleware.push(lispParseMiddleware);
- chatRoom.middleware.push(StrokePoint.chatMiddleware);
- chatRoom.middleware.push(Stroke.chatMiddleware);
- chatRoom.middleware.push(Gesture.chatMiddleware);
- function promiseChatSymbolicExpressions(){
-  return Promise.resolve(chatRoom).then(
-   function getLines(db){
-    return db.lines;
-   }
-  ).then(
-   function flattenPromise(lines){
-    return Promise.all(lines.map(Promise.resolve.bind(Promise)));
-   }
-  ).then(
-   function onlyLispHavers(lines){
-    return lines.map(chatRecordLispHavers).map(Promise.resolve.bind(Promise));
-   }
-  ).then(Promise.all.bind(Promise)).then(
-   function onlyNonempty(lines){
-    return lines.filter(function(lispHavers){return lispHavers.length;});
-   }
-  ).then(
-   function firstPer(lines){
-    return lines.map(function(lispHavers){return lispHavers[0].lisp;});
-   }
-  );
- }
- function promiseRoomHydrates(){
-  return Promise.resolve(promiseChatSymbolicExpressions()).then(
-   function onlyTypeHaving(exprs){
-    return exprs.filter(
-     function(expr){
-      return has(expr, "line");
-     }
-    ).map(
-     function(expr){
-      return expr.line;
-     }
-    ).filter(
-     function(line){
-      return has(line, "typeName");
-     }
-    ).filter(
-     function(line){
-      return line.typeName in line;
-     }
-    ).map(
-     function(line){
-      return line[line.typeName];
-     }
-    );
-   }
-  );
- }
- function promiseRoomDrawables(){
-  return Promise.resolve(promiseRoomHydrates()).then(
-   function(hydrates){
-    return hydrates.filter(
-     function(ob){
-      return has(ob, "draw");
-     }
-    );
-   }
-  );
- }
- function promiseRoomGestures(){
-  return Promise.resolve(promiseChatSymbolicExpressions()).then(
-   function onlyGestures(exprs){
-    return exprs.filter(
-     function(expr){
-      return has(expr, Gesture.prototype.typeName);
-     }
-    ).map(
-     function(expr){
-      return expr[Gesture.prototype.typeName];
-     }
-    );
-   }
-  ).then(
-   function onlySome(gs){
-    return gs.filter(I).filter(
-     function oneStroke(g){
-      return 1 == g.strokes.length;
-     }
-    );
-   }
-  );
- }
- function drawGestures(gestures, camera){
-  var ctx = camera.ctx;
-  ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
-  return [].concat.apply(
-   [],
-   gestures.map(
-    function(gesture){
-     return gesture.draw(camera);
-    }
-   )
-  );
- }
-
- var gestureEmitter = null;
- var result = {};
- var emitInterp = null;
- function beginGesture(stroke){
-  var gesture = new Gesture();
-  gestures.push(gesture);
-  activeGesture = gesture;
-  gestureEmitter(activeGesture);
-  gesture.promise.then(emitInterp);
-  return gesture;
- }
- function beginStroke(touch, vehicle){
-  var index = touch.identifier;
-  if(index in strokes) strokes[index].end();
-  var stroke = new Stroke(index, vehicle.camera);
-  stroke.moveTo(touch, vehicle.camera);
-  strokes[index] = stroke;
-  if(!activeGesture) beginGesture(stroke);
-  activeGesture.addStroke(stroke);
-  return touch;
- }
- function endGesture(vehicle){
-  var endingGesture = activeGesture;
-  activeGesture = null;
-  endingGesture.end(vehicle.camera);
- }
- function endStroke(touch, vehicle){
-  var stroke = strokes[touch.identifier];
-  stroke.moveTo(touch, vehicle.camera);
-  stroke.end();
-  var promiseEndGesture = null;
-  if(activeGesture.isDone())
-   promiseEndGesture = endGesture(vehicle);
-  return Promise.resolve(promiseEndGesture).then(K(touch));
- }
- result.gestureStream = new Stream(
-  function(emit){
-   gestureEmitter = emit;
+function TouchInputCanvas(canvas){
+ this.canvas = canvas;
+ this.strokes = {};
+ this.dirty = true;
+ this.activeGesture = null;
+ this.gestures = [];
+ this.room = new ChatDb();
+ this.room.middleware.push(lispParseMiddleware);
+ this.room.middleware.push(StrokePoint.chatMiddleware);
+ this.room.middleware.push(Stroke.chatMiddleware);
+ this.room.middleware.push(Gesture.chatMiddleware);
+ var that = this;
+ this.gestureBeginStream = new Stream(
+  function emitFromMethod(emitGestureBegin){
+   that.beginGesture = function(stroke){
+    this.activeGesture = new Gesture();
+    this.gestures.push(this.activeGesture);
+    emitGestureBegin(this.activeGesture);
+   };
   }
  );
- result.gestureBeginStream = result.gestureStream;
- result.gestureEndStream = new Stream(
-  function(emit){
-   emitInterp = emit;
-  }
- );
- result.gestureEndStream.listen(
-  function(interpretation){
-   function drawEm(ds){
-    drawGestures(ds, result.camera);
-   }
-   if(interpretation instanceof ZoomPan)
-    return Promise.resolve(
-     interpretation.transform(result.camera)
-    ).then(
-     function(cam){
-      result.camera = cam;
-     }
-    ).then(promiseRoomDrawables).then(drawEm);
-   else
-    return interpretation.promiseToLisp().then(promiseSendLisp).then(
-     promiseRoomDrawables
-    ).then(
-     function appendNewest(ds){
-     return [].concat(ds, [interpretation]);
-    }
-    ).then(drawEm);
-  }
- );
- var emitForeign = null;
- result.gestureRoomStream = new Stream(
-  function(emit){
-   emitForeign = emit;
-  }
- );
- chatRoom.lineEmitter.stream.listen(
-  function emitFirstGesture(line){
-   var lispHavers = chatRecordLispHavers(line);
-   if(!!lispHavers.length) return;
-   var candidates = lispHavers.map(
-    function(lispHaver){
-     return lispHaver.lisp;
+ this.gestureStream = this.gestureBeginStream;
+ this.gestureRoomStream = new Stream(
+  function emitFromLines(emitRoomGesture){
+   that.room.lineEmitter.stream.listen(
+    function emitFirstGesture(line){
+     var lispHavers = chatRecordLispHavers(line);
+     if(!!lispHavers.length) return;
+     var key = Gesture.prototype.typeName;
+     var gestures = lispHavers.map(
+      function getLisp(lispHaver){
+       return lispHaver.lisp;
+      }
+     ).filter(
+      function hasKey(expr){
+       return has(expr, key);
+      }
+     ).map(
+      function getKey(expr){
+       return expr[key];
+      }
+     );
+     if(gestures.length)
+      return emitRoomGesture(gestures[0].interpret());
     }
    );
+  }
+ );
+ this.emitForeignGestures = false;
+ this.gestureEndStream = new Stream(
+  function twoSources(emitGestureEnd){
+   that.gestureBeginStream.listen(
+    function emitFromPromisedEnd(gesture){
+     return gesture.promise.then(emitGestureEnd);
+    }
+   );
+   that.gestureRoomStream.listen(
+    function emitIfEnabled(interp){
+     if(that.emitForeignGestures)
+      emitGestureEnd(interp);
+    }
+   );
+  }
+ );
+}
+TouchInputCanvas.prototype.symbolicExpressionsFromRoom = function(){
+ return Promise.resolve(this.room).then(
+  function getLines(db){
+   return db.lines;
+  }
+ ).then(
+  function flattenPromise(lines){
+   return Promise.all(lines.map(Promise.resolve.bind(Promise)));
+  }
+ ).then(
+  function onlyLispHavers(lines){
+   return lines.map(chatRecordLispHavers).map(Promise.resolve.bind(Promise));
+  }
+ ).then(
+  Promise.all.bind(Promise)
+ ).then(
+  function onlyNonempty(lines){
+   return lines.filter(
+    function hasSome(lispHavers){
+     return lispHavers.length;
+    }
+   );
+  }
+ ).then(
+  function firstPer(lines){
+   return lines.map(
+    function firstSymbolicExpression(lispHavers){
+     return lispHavers[0].lisp;
+    }
+   );
+  }
+ );
+};
+TouchInputCanvas.prototype.hydratedValuesFromRoom = function(){
+ return Promise.resolve(
+  this.symbolicExpressionsFromRoom()
+ ).then(
+  function onlyTypeHavers(exprs){
+   return exprs.filter(
+    function hasLine(expr){
+     return has(expr, "line");
+    }
+   ).map(
+    function getLine(expr){
+     return expr.line;
+    }
+   ).filter(
+    function hasTypeName(line){
+     return has(line, "typeName");
+    }
+   ).filter(
+    function hasKey(line){
+     return line.typeName in line;
+    }
+   ).map(
+    function(line){
+     return line[line.typeName];
+    }
+   );
+  }
+ );
+};
+TouchInputCanvas.prototype.drawablesFromRoom = function(){
+ return Promise.resolve(
+  this.hydratedValuesFromRoom()
+ ).then(
+  function onlyDrawHavers(hydrates){
+   return hydrates.filter(
+    function hasDraw(ob){
+     return has(ob, "draw");
+    }
+   );
+  }
+ );
+};
+TouchInputCanvas.prototype.gesturesFromRoom = function(){
+ return Promise.resolve(
+  this.symbolicExpressionsFromRoom()
+ ).then(
+  function onlyGestures(exprs){
    var key = Gesture.prototype.typeName;
-   var gestures = candidates.filter(
-    function(expr){
+   return exprs.filter(
+    function hasKey(expr){
      return has(expr, key);
     }
    ).map(
-    function(expr){
+    function getGesture(expr){
      return expr[key];
     }
    );
-   if(gestures.length)
-    return emitForeign(gestures[0].interpret());
+  }
+ ).then(
+  function onlySome(gs){
+   return gs.filter(I).filter(
+    function monostrophicp(g){
+     return 1 == g.strokes.length;
+    }
+   );
   }
  );
- var emitForeignGestures = false;
- if(emitForeignGestures)
-  result.gestureRoomStream.listen(emitInterp);
- result.room = chatRoom;
- function sizeCanvas(){
-  var vp = getBrowserViewport();
-  canv.width = vp.vw - 16;
-  canv.height = vp.vh - 16 - 32;
-  return vp;
- }
- return Promise.resolve(canv.getContext("2d")).then(
-  function(ctx){
-   result.ctx = ctx;
-   result.camera = new Camera(0, 0, 1, ctx);
+};
+TouchInputCanvas.prototype.beginStroke = function(touch, vehicle){
+ var index = touch.identifier;
+ if(index in this.strokes) this.strokes[index].end();
+ var stroke = new Stroke(index, vehicle.camera);
+ stroke.moveTo(touch, vehicle.camera);
+ this.strokes[index] = stroke;
+ if(!this.activeGesture) this.beginGesture(stroke);
+ return this.activeGesture.addStroke(stroke);
+};
+TouchInputCanvas.prototype.endGesture = function(vehicle){
+ var endingGesture = this.activeGesture;
+ this.activeGesture = null;
+ return endingGesture.end(vehicle.camera);
+};
+TouchInputCanvas.prototype.endStroke = function(touch, vehicle){
+ var stroke = this.strokes[touch.identifier];
+ stroke.moveTo(touch, vehicle.camera);
+ stroke.end();
+ if(this.activeGesture.isDone())
+  return this.endGesture(vehicle);
+};
+TouchInputCanvas.prototype.sizeCanvas = function(){
+ var vp = getBrowserViewport();
+ this.canvas.width = vp.vw - 16;
+ this.canvas.height = vp.vh - 16;
+ return vp;
+};
+
+function promiseInitCanvas(canv){
+ return Promise.resolve(new TouchInputCanvas(canv)).then(
+  function(toucher){
+   function drawGestures(gestures, camera){
+    var ctx = camera.ctx;
+    ctx.clearRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    return [].concat.apply(
+     [],
+     gestures.map(
+      function(gesture){
+       return gesture.draw(camera);
+      }
+     )
+    );
+   }
+   toucher.gestureEndStream.listen(
+    function(interpretation){
+     function drawEm(ds){
+      drawGestures(ds, toucher.camera);
+     }
+     if(interpretation instanceof ZoomPan)
+      return Promise.resolve(
+       interpretation.transform(toucher.camera)
+      ).then(
+       function(cam){
+        toucher.camera = cam;
+       }
+      ).then(
+       function(){
+        return toucher.drawablesFromRoom();
+       }
+      ).then(drawEm);
+     else
+      return interpretation.promiseToLisp().then(promiseSendLisp).then(
+       function getDrawables(){
+        return toucher.drawablesFromRoom();
+       }
+      ).then(
+       function appendNewest(ds){
+       return [].concat(ds, [interpretation]);
+      }
+      ).then(drawEm);
+    }
+   );
+
+   var ctx = toucher.canvas.getContext("2d");
+   toucher.ctx = ctx;
+   toucher.camera = new Camera(0, 0, 1, ctx);
    function getActiveCamera(){
-    if(!activeGesture) return result.camera;
-    var strokes = activeGesture.strokes;
-    if(2 != strokes.length) return result.camera;
+    if(!toucher.activeGesture) return toucher.camera;
+    var strokes = toucher.activeGesture.strokes;
+    if(2 != strokes.length) return toucher.camera;
     var zp = new ZoomPan(strokes[0], strokes[1]);
-    return zp.transform(result.camera);
+    return zp.transform(toucher.camera);
    }
    var roomGestures = [];
    var updatingRoomGestures = false;
    function animate(){
-    if(!dirty)
+    if(!toucher.dirty)
      return promiseNextFrame().then(animate);
-    sizeCanvas(canv);
-    var gs = gestures.filter(
+    toucher.sizeCanvas();
+    var gs = toucher.gestures.filter(
      function unsent(gesture){
       return !("msgid" in gesture);
      }
@@ -285,16 +308,16 @@ function promiseInitCanvas(canv){
      roomGestures
     );
     drawGestures(gs, getActiveCamera());
-    dirty = false;
+    toucher.dirty = false;
     var f = Promise.resolve();
     for(var i = 0; i < 4; i++)
      f = f.then(promiseNextFrame);
     if(!updatingRoomGestures){
      updatingRoomGestures = true;
-     promiseRoomDrawables().then(
+     toucher.drawablesFromRoom().then(
       function(gs){
        if(gs.length != roomGestures.length)
-        dirty = true;
+        toucher.dirty = true;
        roomGestures = gs;
        updatingRoomGestures = false;
       }
@@ -302,11 +325,11 @@ function promiseInitCanvas(canv){
     }
     return f.then(animate);
    }
-   sizeCanvas();
+   toucher.sizeCanvas();
 
    function consumeTouchEvent(evt){
     evt.preventDefault();
-    dirty = true;
+    toucher.dirty = true;
    }
 
    function makeStartStop(processTouch){
@@ -314,7 +337,7 @@ function promiseInitCanvas(canv){
      consumeTouchEvent(touchEvent);
      return [].slice.call(touchEvent.changedTouches).map(
       function(touch){
-       return Promise.resolve(processTouch(touch, result));
+       return Promise.resolve(processTouch(touch, toucher));
       }
      );
     };
@@ -323,22 +346,43 @@ function promiseInitCanvas(canv){
     consumeTouchEvent(touchEvent);
     return [].slice.call(touchEvent.touches).map(
      function(touch){
-      var stroke = strokes[touch.identifier];
-      stroke.moveTo(touch, result.camera);
+      var stroke = toucher.strokes[touch.identifier];
+      stroke.moveTo(touch, toucher.camera);
       return stroke;
      }
     );
    }
 
-   canv.addEventListener("touchstart", makeStartStop(beginStroke));
+   canv.addEventListener(
+    "touchstart",
+    makeStartStop(
+     function beginStroke(touch, vehicle){
+      toucher.beginStroke(touch, vehicle);
+      return touch;
+     }
+    )
+   );
    canv.addEventListener("touchmove", go);
-   canv.addEventListener("touchend", makeStartStop(endStroke));
+   canv.addEventListener(
+    "touchend",
+    makeStartStop(
+     function(touch, vehicle){
+      return Promise.resolve(
+       toucher.endStroke(touch, vehicle)
+      ).then(
+       K(touch)
+      );
+     }
+    )
+   );
 
-   chatRoom.run(1000);
-   chatRoom.lineEmitter.stream.listen(function(){dirty = true;});
-   dirty = true;
+   toucher.room.run(1000);
+   toucher.room.lineEmitter.stream.listen(
+    function(){toucher.dirty = true;}
+   );
+   toucher.dirty = true;
    animate();
-   return result;
+   return toucher;
   }
  );
 }
