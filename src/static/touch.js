@@ -6,27 +6,6 @@ function promiseNextFrame(){
  );
 }
 
-function allKeptPromises(proms){
- return Promise.all(
-  proms.map(
-   Promise.resolve.bind(Promise)
-  ).map(
-   function(p){
-    return p.then(
-     function(x){return [x];},
-     K(false)
-    );
-   }
-  )
- ).then(
-  function(xs){
-   return xs.filter(I).map(
-    function(x){return x[0];}
-   );
-  }
- );
-}
-
 function getBrowserViewport(){
  // thanks https://github.com/ryanve/verge/blob/master/src/verge.js
  var win = null;
@@ -111,6 +90,67 @@ function TouchInputCanvas(canvas){
  );
  this.ctx = this.canvas.getContext("2d");
  this.camera = new Camera(0, 0, 1, this.ctx);
+ this.dirty = true;
+ this.room.lineEmitter.stream.listen(
+  function markAsDirty(){
+   that.dirty = true;
+  }
+ );
+
+ this.canvas.addEventListener(
+  "touchstart",
+  function(evt){
+   return that.handleStart(evt);
+  }
+ );
+ this.canvas.addEventListener(
+  "touchmove",
+  function(evt){
+   return that.handleMove(evt);
+  }
+ );
+ this.canvas.addEventListener(
+  "touchend",
+  function(evt){
+   return that.handleEnd(evt);
+  }
+ );
+
+ this.gestureEndStream.listen(
+  function redrawEverything(interpretation){
+   function drawThem(drawables){
+    var ctx = that.camera.ctx;
+    var canvas = ctx.canvas;
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    var strokeses = drawables.map(
+     function drawIt(drawable){
+      return drawable.draw(that.camera);
+     }
+    );
+    return [].concat.apply([], strokeses);
+   }
+   if(interpretation instanceof ZoomPan)
+    return that.handleZoomPan(interpretation).then(
+     that.drawablesFromRoom.bind(that)
+    ).then(drawThem);
+   else
+    return interpretation.promiseToLisp().then(promiseSendLisp).then(
+     function getDrawables(){
+      return that.drawablesFromRoom();
+     }
+    ).then(
+     function appendNewest(ds){
+      return [].concat(ds, [interpretation]);
+     }
+    ).then(drawThem);
+  }
+ );
+
+ var animation = this.makeAnimationStream();
+ this.animation = animation.stream;
+ this.sizeCanvas();
+ this.room.run(1000);
+ animation.emit();
 }
 TouchInputCanvas.prototype.symbolicExpressionsFromRoom = function(){
  return Promise.resolve(this.room).then(
@@ -275,129 +315,89 @@ TouchInputCanvas.prototype.paint = function(roomDrawablesCache){
  var strokes = [].concat.apply([], strokeses);
  this.dirty = false;
 };
-
-function promiseInitCanvas(canv){
- return Promise.resolve(new TouchInputCanvas(canv)).then(
-  function(toucher){
-   toucher.gestureEndStream.listen(
-    function(interpretation){
-     function drawEm(drawables){
-      var ctx = toucher.camera.ctx;
-      var canvas = ctx.canvas;
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
-      var strokeses = drawables.map(
-       function drawIt(drawable){
-        return drawable.draw(toucher.camera);
-       }
-      );
-      return [].concat.apply([], strokeses);
-     }
-     if(interpretation instanceof ZoomPan)
-      return Promise.resolve(
-       interpretation.transform(toucher.camera)
-      ).then(
-       function(cam){
-        toucher.camera = cam;
-       }
-      ).then(
-       function(){
-        return toucher.drawablesFromRoom();
-       }
-      ).then(drawEm);
-     else
-      return interpretation.promiseToLisp().then(promiseSendLisp).then(
-       function getDrawables(){
-        return toucher.drawablesFromRoom();
-       }
-      ).then(
-       function appendNewest(ds){
-       return [].concat(ds, [interpretation]);
-      }
-      ).then(drawEm);
-    }
-   );
-
-   var updatingRoomGestures = false;
-   var roomGestures = [];
-   function promiseUpdateRoomGestures(){
-    if(updatingRoomGestures) return Promise.resolve();
-    updatingRoomGestures = true;
-    return Promise.resolve(
-     toucher.drawablesFromRoom()
-    ).then(
-     function(drawables){
-      if(drawables.length != roomGestures.length)
-       toucher.dirty = true;
-      roomGestures = drawables;
-      updatingRoomGestures = false;
-     }
-    );
+TouchInputCanvas.prototype.makeAnimationStream = function(){
+ var updatingRoomDrawables = false;
+ var roomDrawables = [];
+ var that = this;
+ function promiseUpdateRoomDrawables(){
+  if(updatingRoomDrawables) return Promise.resolve();
+  updatingRoomDrawables = true;
+  return Promise.resolve(
+   that.drawablesFromRoom()
+  ).then(
+   function update(drawables){
+    if(drawables.length != roomDrawables.length)
+     that.dirty = true;
+    roomDrawables = drawables;
+    updatingRoomDrawables = false;
    }
-
-   function animate(){
-    if(!toucher.dirty)
-     return promiseNextFrame().then(animate);
-    toucher.paint(roomGestures);
-    var f = Promise.resolve();
-    for(var i = 0; i < 4; i++)
-     f = f.then(promiseNextFrame);
-    promiseUpdateRoomGestures();
-    return f.then(animate);
-   }
-
-   toucher.sizeCanvas();
-
-   canv.addEventListener(
-    "touchstart",
-    function strokeStart(touchEvent){
-     toucher.consumeTouchEvent(touchEvent);
-     return [].slice.call(touchEvent.changedTouches).map(
-      function(touch){
-       toucher.beginStroke(touch, toucher);
-       return Promise.resolve(touch);
-      }
-     );
-    }
+  );
+ }
+ function animationStep(){
+  if(!that.dirty) return Promise.resolve();
+  var frameSkipper = Promise.resolve(that.paint(roomDrawables));
+  for(var i = 0; i < 3; i++)
+   frameSkipper = frameSkipper.then(promiseNextFrame);
+  Promise.resolve().then(promiseUpdateRoomDrawables);
+  return frameSkipper;
+ }
+ var animation = new (Stream.Naked)();
+ animation.stream.listen(
+  function perpetuate(){
+   return Promise.resolve().then(
+    animationStep
+   ).then(
+    promiseNextFrame
+   ).then(
+    animation.emit.bind(animation)
    );
-   canv.addEventListener(
-    "touchmove",
-    function go(touchEvent){
-     toucher.consumeTouchEvent(touchEvent);
-     return [].slice.call(touchEvent.touches).map(
-      function(touch){
-       var stroke = toucher.strokes[touch.identifier];
-       stroke.moveTo(touch, toucher.camera);
-       return stroke;
-      }
-     );
-    }
-   );
-
-   canv.addEventListener(
-    "touchend",
-    function eventHandler(touchEvent){
-     toucher.consumeTouchEvent(touchEvent);
-     return [].slice.call(touchEvent.changedTouches).map(
-      function(touch){
-       return Promise.resolve(
-        Promise.resolve(
-         toucher.endStroke(touch, toucher)
-        ).then(
-         K(touch)
-        )
-       );
-      }
-     );
-    }
-   );
-
-   toucher.room.run(1000);
-   toucher.room.lineEmitter.stream.listen(
-    function(){toucher.dirty = true;}
-   );
-   toucher.dirty = true;
-   animate();
-   return toucher;
   }
  );
+ return animation;
+};
+TouchInputCanvas.prototype.handleStart = function(touchEvent){
+ this.consumeTouchEvent(touchEvent);
+ var that = this;
+ return [].slice.call(touchEvent.changedTouches).map(
+  function oneStart(touch){
+   that.beginStroke(touch, that);
+   return Promise.resolve(touch);
+  }
+ );
+};
+TouchInputCanvas.prototype.handleMove = function(touchEvent){
+ this.consumeTouchEvent(touchEvent);
+ var that = this;
+ return [].slice.call(touchEvent.touches).map(
+  function oneMove(touch){
+   var stroke = that.strokes[touch.identifier];
+   stroke.moveTo(touch, that.camera);
+   return stroke;
+  }
+ );
+};
+TouchInputCanvas.prototype.handleEnd = function(touchEvent){
+ this.consumeTouchEvent(touchEvent);
+ var that = this;
+ return [].slice.call(touchEvent.changedTouches).map(
+  function oneEnd(touch){
+   return Promise.resolve(
+    that.endStroke(touch, that)
+   ).then(K(touch));
+  }
+ );
+};
+TouchInputCanvas.prototype.handleZoomPan = function(zp){
+ var that = this;
+ return Promise.resolve(
+  zp.transform(this.camera)
+ ).then(
+  function storeCamera(cam){
+   that.camera = cam;
+  }
+ );
+}
+
+function promiseInitCanvas(canv){
+ return Promise.resolve(new TouchInputCanvas(canv));
 }
